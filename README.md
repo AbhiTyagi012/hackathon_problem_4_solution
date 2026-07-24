@@ -7,10 +7,16 @@ which rules ran, which matched, which were rejected (and why), and the final out
 The engine is domain-agnostic; this repo showcases it as an **e-commerce product recommendation
 system**, with:
 
-- A **shopper UI** — profile → home recommendations, search → recommended rail, buy → post-purchase
-  recommendations — each with a "why this?" explanation.
-- An **admin UI** — create rules from plain English (via Grok), a condition builder, priority
-  reordering, a live per-rule recommendation preview, and an AI ruleset-quality review.
+- A **shopper UI** — home (three rails: rule-based recommendations, purchase-history similarity,
+  and all products), search → recommended rail, buy → post-purchase recommendations — each with a
+  "why this?" explanation.
+- An **admin UI** — create rules from plain English (via Grok) with a live match-count preview
+  *before* saving, a condition builder, priority reordering, and an AI ruleset-quality review.
+
+Interest is **not** a field a shopper fills in — no real e-commerce platform asks that. It's derived
+server-side from what the shopper has actually bought (`purchase_tags`, from `app/history/`), which
+also unlocks a genuinely different, embeddings-based recommendation mechanism (the purchase-history
+rail) alongside the deterministic rule engine.
 
 ## Architecture
 
@@ -24,6 +30,8 @@ FastAPI backend
  ├─ engine/*            domain-agnostic rule engine (operators, condition tree, strategies)
  ├─ rules/repository.py rules persisted as YAML (read + write)
  ├─ catalog/repository.py seeded product catalog (JSON)
+ ├─ history/repository.py per-shopper purchase history (JSON) — the source of purchase_tags
+ ├─ embeddings/*         Gemini embeddings + FAISS similarity index (purchase-history rail)
  └─ llm/*               Grok (xAI) integration + deterministic offline fallbacks
 ```
 
@@ -39,10 +47,14 @@ flowchart LR
     RS --> STRAT[Decision Strategies]
     RS --> CATALOG[Product Repository]
     RS --> AUDIT[Audit Store]
+    RS --> HIST[Purchase History Repository]
+    RS --> VEC[FAISS Vector Index]
+    VEC --> EMB[Gemini EmbeddingService]
     RAS --> RULES[Rule Repository - YAML]
     RS --> LLM[Grok LLMService]
     RAS --> LLM
     LLM -. no key .-> FALLBACK[Deterministic Fallback]
+    EMB -. no key .-> HASHFALLBACK[Deterministic Hash Vector]
 ```
 
 **Why it's built this way:**
@@ -58,6 +70,17 @@ flowchart LR
   DB-backed store could replace the in-memory one with no caller changes.
 - **LLMService is an interface** (`llm/service.py`) — Grok is called through one seam, and every
   feature has a deterministic fallback (`llm/fallback.py`) so the app fully works with no API key.
+- **PurchaseHistoryRepository is an interface** (`history/repository.py`) — today it's JSON-backed;
+  same swap-for-a-database story as rules/audit.
+- **EmbeddingService is an interface** (`embeddings/service.py`) — Gemini is called through one
+  seam, with a deterministic hashing-trick fallback vector when no key is configured or a call
+  fails, so the purchase-history rail works fully offline, same discipline as `LLMService`.
+- **The Recommendation rail stays 100% rule-based, on purpose.** The purchase-history rail
+  (embeddings + FAISS) is a genuinely different, additive mechanism — not a replacement — because
+  the rule engine's `rules_evaluated`/`rules_matched`/`rules_rejected` trace is what makes decisions
+  explainable, and an LLM's self-reported reason for a choice is not guaranteed to be the actual
+  cause of that choice. Each mechanism is used where it's the right tool, not routed through an LLM
+  by default.
 
 ## Rule schema
 
@@ -69,7 +92,7 @@ flowchart LR
   version: 1              # bumped automatically on every edit
   condition:
     all:
-      - field: interests
+      - field: purchase_tags
         operator: any_in
         value: [gaming]
       - any:
@@ -100,6 +123,10 @@ Every `/recommend/*` and `/evaluate` response is a `Decision` with:
 - `explanation` — one human-readable sentence summarizing the decision
 - `used_ai_fallback` — true when no rule matched and Grok's cold-start suggestions were used instead
 
+The purchase-history rail (`POST /recommend/similar`) is deliberately **not** a `Decision` — it has
+no rule trace, only a similarity score, so it gets its own `SimilarProductsResponse` shape instead
+of diluting the rule engine's explainability format with a different mechanism.
+
 ## Extensibility & the "twist-proofing" built in
 
 | If asked to... | Where it plugs in |
@@ -111,14 +138,17 @@ Every `/recommend/*` and `/evaluate` response is a `Decision` with:
 | Add bulk evaluation | `POST /recommend/bulk` already implemented |
 | Add auth | add a dependency to `api/routes/rules.py` (admin) — routes are otherwise unauthenticated by design |
 | Swap rule storage to a DB | implement `RuleRepository` (rules/repository.py) against a table |
-| Integrate an external API | already done — the Grok/xAI integration in `llm/service.py` |
+| Swap purchase history to a DB | implement `PurchaseHistoryRepository` (history/repository.py) against a table |
+| Integrate an external API | already done — the Grok/xAI integration in `llm/service.py`, and the Gemini embeddings integration in `embeddings/service.py` |
 
-## AI (Grok) features
+## AI features
 
-All optional — the app runs fully offline with deterministic fallbacks if `XAI_API_KEY` is unset.
+All optional — the app runs fully offline with deterministic fallbacks if no API key is set.
 
+**Grok (xAI)** — admin-tooling assistant, one seam (`llm/service.py`):
 1. **NL → rule authoring**: `POST /rules/from-text` — admin describes a rule in English, Grok
-   returns the structured rule, pre-filling the admin form for review before saving.
+   returns the structured rule; the admin UI immediately shows a live match-count preview
+   (`POST /rules/preview-draft`) in the same modal, before the rule is ever saved.
 2. **Cold-start fallback**: when zero rules match a shopper, `RecommendationService` asks Grok to
    suggest catalog products; these are labeled "AI suggestion" in the UI and `used_ai_fallback: true`
    in the API — clearly distinguished from rule-driven picks.
@@ -128,6 +158,13 @@ All optional — the app runs fully offline with deterministic fallbacks if `XAI
 4. **Ruleset quality review**: `POST /rules/review` — Grok scans all rules for conflicts,
    redundancy, and coverage gaps.
 
+**Gemini embeddings** — the purchase-history rail, one seam (`embeddings/service.py`):
+5. **`POST /recommend/similar`**: embeds the catalog once (cached) and the shopper's purchase
+   history, then ranks by cosine similarity via a FAISS index (`embeddings/index.py`) — a genuinely
+   different recommendation mechanism from the rule engine, not a wrapper around it. Falls back to
+   a deterministic hashing-trick vector with zero network calls when `GEMINI_API_KEY` is unset or
+   the API call fails, so the rail never hard-depends on a live network connection.
+
 ## Setup
 
 ### Backend
@@ -135,7 +172,7 @@ All optional — the app runs fully offline with deterministic fallbacks if `XAI
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # optionally set XAI_API_KEY
+cp .env.example .env   # optionally set XAI_API_KEY and/or GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 Swagger UI: http://localhost:8000/docs
@@ -151,46 +188,61 @@ Open http://localhost:5173 (shopper) and http://localhost:5173/admin (admin).
 
 ### Docker Compose (both services)
 ```bash
+cp backend/.env.example backend/.env   # optionally set XAI_API_KEY and/or GEMINI_API_KEY
 docker compose up --build
 ```
-Backend on `:8000`, frontend on `:3000`. Set `XAI_API_KEY` in your shell env before `up` to enable
-live Grok calls; otherwise all AI features run on deterministic fallbacks.
+Backend on `:8000`, frontend on `:3000`. The backend service loads `backend/.env` directly
+(`env_file` in `docker-compose.yml`) — set `XAI_API_KEY` and/or `GEMINI_API_KEY` there to enable
+live Grok/Gemini calls. `backend/.env` is optional (the compose file treats it as
+`required: false`), so `docker compose up` still works with zero setup — every AI feature just runs
+on its deterministic fallback instead.
 
 ### Tests
 ```bash
 cd backend && pytest -v
 ```
-41 tests covering operators, the condition tree, rule engine ordering/explanation, decision
-strategies, file-repository read/write round-trips (incl. reorder/versioning), the recommendation
-service (home/search/purchase/cold-start/bulk), and end-to-end API behavior.
+55 tests covering operators, the condition tree, rule engine ordering/explanation, decision
+strategies, file-repository read/write round-trips (incl. reorder/versioning), purchase-history
+repository round-trips, the embeddings fallback vector and FAISS index, the recommendation service
+(home/search/purchase/cold-start/bulk/purchase-history similarity), and end-to-end API behavior.
 
 ## Example requests
 
 ```bash
-# Home recommendations for a gamer
+# Home recommendations — purchase_tags derived server-side from shopper_id's purchase history
 curl -X POST http://localhost:8000/recommend/home \
   -H "Content-Type: application/json" \
-  -d '{"profile": {"interests": ["gaming"], "budget_band": "high", "max_budget": 2000}}'
+  -d '{"profile": {"budget_band": "high", "max_budget": 2000}, "shopper_id": "shopper-demo-gamer"}'
 
 # Search-driven recommendations
 curl -X POST http://localhost:8000/recommend/search \
   -H "Content-Type: application/json" \
-  -d '{"profile": {"interests": []}, "search_query": "laptop"}'
+  -d '{"profile": {}, "shopper_id": "shopper-demo-gamer", "search_query": "laptop"}'
 
-# Post-purchase recommendations
+# Post-purchase recommendations — also persists the purchase to history
 curl -X POST http://localhost:8000/recommend/purchase \
   -H "Content-Type: application/json" \
-  -d '{"profile": {"interests": []}, "purchased_product_id": "p009"}'
+  -d '{"profile": {}, "shopper_id": "shopper-demo-gamer", "purchased_product_id": "p009"}'
+
+# Purchase-history similarity rail (embeddings + FAISS, not rule-based)
+curl -X POST http://localhost:8000/recommend/similar \
+  -H "Content-Type: application/json" \
+  -d '{"shopper_id": "shopper-demo-gamer"}'
 
 # Bulk evaluation
 curl -X POST http://localhost:8000/recommend/bulk \
   -H "Content-Type: application/json" \
-  -d '{"profiles": [{"interests": ["gaming"]}, {"interests": ["beauty"]}]}'
+  -d '{"profiles": [{"budget_band": "high"}, {"budget_band": "low"}]}'
 
 # Create a rule from plain English
 curl -X POST http://localhost:8000/rules/from-text \
   -H "Content-Type: application/json" \
   -d '{"text": "Recommend gaming accessories to users interested in gaming who search for a laptop, priority high"}'
+
+# Preview an unsaved draft rule before committing it
+curl -X POST http://localhost:8000/rules/preview-draft \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Draft", "priority": 10, "condition": {"field": "purchase_tags", "operator": "any_in", "value": ["gaming"]}, "recommend": {"tags": ["gaming"], "score": 1.0}}'
 
 # Retrieve a past decision (audit trail)
 curl http://localhost:8000/decisions

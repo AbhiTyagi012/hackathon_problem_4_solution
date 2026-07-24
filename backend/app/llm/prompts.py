@@ -6,11 +6,11 @@ import json
 CONTEXT_FIELDS = [
     "age (int)",
     "gender (string)",
-    "interests (list of strings, e.g. gaming, music, fitness, beauty, travel)",
+    "purchase_tags (list of strings, e.g. gaming, music, fitness, beauty, travel — derived "
+    "server-side from what the shopper has actually bought, not self-reported)",
     "budget_band (string: low|medium|high)",
     "max_budget (number)",
     "location (string)",
-    "past_purchase_categories (list of strings)",
     "context_type (string: home|search|purchase)",
     "search_query (string)",
     "search_category (string)",

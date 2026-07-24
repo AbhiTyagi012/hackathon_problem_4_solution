@@ -121,7 +121,7 @@ def _regex(actual: Any, expected: Any) -> bool:
     return re.search(str(expected), str(actual)) is not None
 
 
-# --- membership (works with list fields like interests) -------------------- #
+# --- membership (works with list fields like purchase_tags) ---------------- #
 @operator("in")
 def _in(actual: Any, expected: Any) -> bool:
     if not isinstance(expected, (list, tuple, set)):

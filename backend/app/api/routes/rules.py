@@ -59,6 +59,12 @@ def preview_rule(
     return svc.preview(rule_id, payload.profile)
 
 
+@router.post("/preview-draft", response_model=RulePreviewResponse)
+def preview_draft_rule(payload: RuleCreate, svc: RuleAdminService = Depends(get_rule_admin_service)):
+    """Preview an unsaved draft rule (e.g. straight from NL authoring) before it's ever committed."""
+    return svc.preview_draft(payload, None)
+
+
 @router.post("/review", response_model=RuleReviewResponse)
 def review_rules(svc: RuleAdminService = Depends(get_rule_admin_service)):
     return svc.review()

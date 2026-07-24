@@ -29,12 +29,14 @@ logger = get_logger(__name__)
 _DEFAULT_PREVIEW_PROFILE = Profile(
     age=28,
     gender="unspecified",
-    interests=["gaming", "music"],
     budget_band="high",
     max_budget=1500,
     location="unspecified",
-    past_purchase_categories=[],
 )
+# Admin preview has no real shopper/purchase history to derive purchase_tags
+# from, so it uses a representative sample — enough to exercise most rules
+# without wiring a shopper_id through the admin tooling.
+_DEFAULT_PREVIEW_PURCHASE_TAGS = ["gaming", "music"]
 
 
 def _slugify(name: str) -> str:
@@ -93,10 +95,22 @@ class RuleAdminService:
 
     def preview(self, rule_id: str, profile: Profile | None) -> RulePreviewResponse:
         rule = self.rule_repo.get(rule_id)
+        return self._preview(rule_id, rule.condition, rule.recommend, profile, json.loads(rule.model_dump_json()))
+
+    def preview_draft(self, payload: RuleCreate, profile: Profile | None) -> RulePreviewResponse:
+        """Same evaluation as preview(), but for an unsaved draft rule — lets the
+        admin see match count *before* committing (fuses NL-drafting + preview
+        into one step instead of generate -> save -> preview-after-the-fact)."""
+        return self._preview("draft", payload.condition, payload.recommend, profile, payload.model_dump())
+
+    def _preview(
+        self, rule_id: str, condition: Condition, recommend, profile: Profile | None, rule_for_llm: dict
+    ) -> RulePreviewResponse:
         facts = (profile or _DEFAULT_PREVIEW_PROFILE).model_dump()
         facts["context_type"] = "home"
-        matched, _ = evaluate_condition(rule.condition, facts)
-        products = resolve_recommend_targets(rule.recommend, self.product_repo)
+        facts["purchase_tags"] = _DEFAULT_PREVIEW_PURCHASE_TAGS
+        matched, _ = evaluate_condition(condition, facts)
+        products = resolve_recommend_targets(recommend, self.product_repo)
         logger.info("rule preview: id=%s matched=%s resolved_products=%d", rule_id, matched, len(products))
 
         if products:
@@ -110,7 +124,7 @@ class RuleAdminService:
             )
 
         suggestion, source = self.llm_service.suggest_product_for_rule(
-            json.loads(rule.model_dump_json()), self.product_repo.categories(), self.product_repo.tags()
+            rule_for_llm, self.product_repo.categories(), self.product_repo.tags()
         )
         logger.info("rule preview: id=%s has no matching product, suggested one via %s", rule_id, source)
         feedback = (

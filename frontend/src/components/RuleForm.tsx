@@ -10,8 +10,8 @@ const OPERATORS = [
 ];
 
 const FIELD_SUGGESTIONS = [
-  "age", "gender", "interests", "budget_band", "max_budget", "location",
-  "past_purchase_categories", "context_type", "search_query", "search_category",
+  "age", "gender", "budget_band", "max_budget", "location", "purchase_tags",
+  "context_type", "search_query", "search_category",
   "purchased_category", "purchased_tags",
 ];
 

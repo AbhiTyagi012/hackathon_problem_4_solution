@@ -50,11 +50,9 @@ export interface Product {
 export interface Profile {
   age?: number | null;
   gender?: string | null;
-  interests: string[];
   budget_band?: string | null;
   max_budget?: number | null;
   location?: string | null;
-  past_purchase_categories: string[];
 }
 
 export interface RuleTrace {
@@ -105,4 +103,19 @@ export interface RulePreviewResponse {
 export interface RuleReviewResponse {
   review: string;
   source: string;
+}
+
+// Purchase-history rail: embeddings + cosine similarity, not rule-based —
+// deliberately a distinct shape from Decision, which has no meaning here
+// (there's no rule trace to report for a similarity match).
+export interface SimilarProduct {
+  product: Product;
+  score: number;
+  similar_to_product_id: string;
+  reason: string;
+}
+
+export interface SimilarProductsResponse {
+  items: SimilarProduct[];
+  source: "gemini" | "fallback";
 }

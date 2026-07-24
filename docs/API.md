@@ -15,27 +15,60 @@ All errors return `{"error": "<ExceptionClass>", "message": "..."}` with the mat
 
 ## Recommendations (the decision engine, e-commerce-flavored)
 
+`interests` is not a client-supplied field — no real shopper self-reports interests. Every
+`profile`-shaped request instead takes a `shopper_id`; the server derives an interest signal
+(`purchase_tags`) server-side from that shopper's actual purchase history (`app/history/`) and
+feeds it into the rule engine. A shopper with no purchase history yet gets `purchase_tags: []`.
+
 ### `POST /recommend/home`
 ```json
-{ "profile": { "interests": ["gaming"], "budget_band": "high", "max_budget": 2000 } }
+{ "profile": { "budget_band": "high", "max_budget": 2000 }, "shopper_id": "shopper-demo-gamer" }
 ```
 → `Decision` (see shape below).
 
 ### `POST /recommend/search`
 ```json
-{ "profile": { "interests": [] }, "search_query": "laptop", "search_category": null }
+{ "profile": {}, "shopper_id": "shopper-demo-gamer", "search_query": "laptop", "search_category": null }
 ```
 
 ### `POST /recommend/purchase`
 ```json
-{ "profile": { "interests": [] }, "purchased_product_id": "p009" }
+{ "profile": {}, "shopper_id": "shopper-demo-gamer", "purchased_product_id": "p009" }
 ```
+Also persists the purchase to `PurchaseHistoryRepository` — the next `/recommend/home` call for the
+same `shopper_id` reflects it in `purchase_tags`.
 
 ### `POST /recommend/bulk`
 ```json
-{ "profiles": [ { "interests": ["gaming"] }, { "interests": ["beauty"] } ] }
+{ "profiles": [ { "budget_band": "high" }, { "budget_band": "low" } ] }
 ```
-→ `Decision[]` — one per profile.
+→ `Decision[]` — one per profile. Bulk is a batch what-if analysis, not tied to an individual
+shopper, so each profile evaluates cold-start (`purchase_tags: []`).
+
+### `POST /recommend/similar`
+```json
+{ "shopper_id": "shopper-demo-gamer" }
+```
+→
+```json
+{
+  "items": [
+    {
+      "product": { "id": "p043", "name": "Nova Studio", "...": "..." },
+      "score": 0.57,
+      "similar_to_product_id": "p001",
+      "reason": "Similar to your purchase of 'Nova Gaming Laptop 15'"
+    }
+  ],
+  "source": "gemini"
+}
+```
+The purchase-history rail — a genuinely different mechanism from the rest of `/recommend/*`:
+embeddings (Gemini, with a deterministic offline fallback when `GEMINI_API_KEY` is unset) + a FAISS
+similarity search over the catalog, ranked by cosine similarity to the shopper's past purchases.
+Deliberately **not** a `Decision` — there is no rule trace to report, only a similarity score, so
+diluting the rule engine's explainability shape with a different mechanism would be misleading.
+Returns `items: []` for a shopper with no purchase history.
 
 ### `Decision` response shape
 ```json
@@ -66,7 +99,7 @@ All errors return `{"error": "<ExceptionClass>", "message": "..."}` with the mat
 ### `POST /evaluate`
 Pass any facts dict directly (bypasses the profile-shaped helpers above):
 ```json
-{ "context_type": "home", "facts": { "interests": ["gaming"], "budget_band": "high" } }
+{ "context_type": "home", "facts": { "purchase_tags": ["gaming"], "budget_band": "high" } }
 ```
 
 ### `GET /decisions?limit=50`
@@ -89,7 +122,7 @@ Retrieve one past decision by id (404 if not found/expired from memory).
   "priority": 100,
   "condition": {
     "all": [
-      { "field": "interests", "operator": "any_in", "value": ["gaming"] },
+      { "field": "purchase_tags", "operator": "any_in", "value": ["gaming"] },
       { "field": "max_budget", "operator": "gte", "value": 1000 }
     ]
   },
@@ -124,9 +157,9 @@ reviews/edits before `POST /rules`.
 
 ### `POST /rules/{rule_id}/preview`
 ```json
-{ "profile": { "interests": ["gaming"], "budget_band": "high" } }
+{ "profile": { "budget_band": "high" } }
 ```
-(`profile` optional — a demo profile is used if omitted.)
+(`profile` optional — a demo profile with representative `purchase_tags` is used if omitted.)
 →
 ```json
 {
@@ -140,6 +173,21 @@ reviews/edits before `POST /rules`.
 ```
 When `matched_products` is empty, `needs_product: true` and `suggested_product` holds a
 Grok-suggested product spec to add to the catalog.
+
+### `POST /rules/preview-draft`
+Same response shape as `/rules/{rule_id}/preview`, but for an **unsaved** draft rule — body is a
+`RuleCreate` (no `id` yet). Lets the admin see the match count *before* committing, instead of
+generate → save → preview-after-the-fact. This is what fuses NL rule authoring and preview into one
+step in the admin UI: after `/rules/from-text` returns a draft, the UI immediately calls this
+endpoint and shows the match count inline in the same modal.
+```json
+{
+  "name": "Draft rule", "priority": 10,
+  "condition": { "field": "purchase_tags", "operator": "any_in", "value": ["gaming"] },
+  "recommend": { "tags": ["gaming"], "score": 1.0 }
+}
+```
+→ `rule_id: "draft"` in the response; nothing is written to the ruleset.
 
 ### `POST /rules/review`
 No body. → `{ "review": "...bullet-point findings...", "source": "grok" }`.

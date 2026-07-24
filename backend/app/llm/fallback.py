@@ -22,7 +22,7 @@ _INTEREST_TAGS = {
 
 
 def nl_to_rule(text: str, categories: list[str], tags: list[str]) -> dict:
-    """Very small keyword parser -> a rule targeting matched interests/tags."""
+    """Very small keyword parser -> a rule targeting matched purchase_tags/tags."""
     lowered = text.lower()
     matched_tags = sorted({t for t in tags if t.lower() in lowered})
     matched_categories = sorted({c for c in categories if c.lower() in lowered})
@@ -31,12 +31,12 @@ def nl_to_rule(text: str, categories: list[str], tags: list[str]) -> dict:
         matched_tags = _INTEREST_TAGS[interest]
 
     if interest:
-        condition = {"field": "interests", "operator": "any_in", "value": [interest]}
+        condition = {"field": "purchase_tags", "operator": "any_in", "value": [interest]}
     elif "budget" in lowered or "cheap" in lowered or "affordable" in lowered:
         condition = {"field": "budget_band", "operator": "equals_ci", "value": "low"}
         matched_tags = matched_tags or ["budget"]
     else:
-        condition = {"field": "interests", "operator": "any_in", "value": matched_tags or ["gaming"]}
+        condition = {"field": "purchase_tags", "operator": "any_in", "value": matched_tags or ["gaming"]}
 
     return {
         "name": (text[:40] + "…") if len(text) > 40 else text,

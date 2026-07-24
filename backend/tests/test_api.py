@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.main import app
+from tests.conftest import SHOPPER_FITNESS
 
 
 @pytest.fixture
@@ -28,7 +29,10 @@ def test_list_rules(client):
 
 
 def test_recommend_home_returns_ranked_products_with_explanation(client):
-    resp = client.post("/recommend/home", json={"profile": {"interests": ["gaming"], "budget_band": "high", "max_budget": 2000}})
+    resp = client.post(
+        "/recommend/home",
+        json={"profile": {"budget_band": "high", "max_budget": 2000}, "shopper_id": SHOPPER_FITNESS},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["recommendations"]
@@ -93,7 +97,7 @@ def test_rule_preview_no_match_suggests_product(client):
 
 
 def test_evaluate_and_decision_retrieval(client):
-    resp = client.post("/evaluate", json={"context_type": "home", "facts": {"interests": ["gaming"]}})
+    resp = client.post("/evaluate", json={"context_type": "home", "facts": {"purchase_tags": ["beauty"]}})
     assert resp.status_code == 200
     decision_id = resp.json()["decision_id"]
 
@@ -108,10 +112,30 @@ def test_evaluate_and_decision_retrieval(client):
 def test_bulk_recommend_endpoint(client):
     resp = client.post(
         "/recommend/bulk",
-        json={"profiles": [{"interests": ["gaming"]}, {"interests": ["beauty"]}]},
+        json={"profiles": [{"budget_band": "high"}, {"budget_band": "low"}]},
     )
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+def test_preview_draft_rule_endpoint(client):
+    payload = {
+        "name": "Draft rule",
+        "priority": 10,
+        "condition": {"field": "budget_band", "operator": "equals_ci", "value": "medium"},
+        "recommend": {"categories": ["home"], "score": 1.0},
+    }
+    resp = client.post("/rules/preview-draft", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["rule_id"] == "draft"
+
+
+def test_recommend_similar_endpoint(client):
+    resp = client.post("/recommend/similar", json={"shopper_id": SHOPPER_FITNESS})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "items" in body
+    assert "p013" not in {item["product"]["id"] for item in body["items"]}
 
 
 def test_product_not_found_returns_404(client):

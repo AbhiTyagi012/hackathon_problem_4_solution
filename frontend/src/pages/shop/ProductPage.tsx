@@ -9,7 +9,7 @@ import { logger } from "../../lib/logger";
 
 export function ProductPage() {
   const { id } = useParams<{ id: string }>();
-  const { profile } = useProfile();
+  const { profile, shopperId } = useProfile();
   const [product, setProduct] = useState<Product | null>(null);
   const [bought, setBought] = useState(false);
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -29,7 +29,7 @@ export function ProductPage() {
     setError("");
     logger.info("purchase requested", { productId: id });
     try {
-      const rec = await api.recommendPurchase(profile, id);
+      const rec = await api.recommendPurchase(profile, shopperId, id);
       setDecision(rec);
       setBought(true);
     } catch (e) {

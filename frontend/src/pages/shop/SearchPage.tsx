@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { Decision, Product } from "../../api/types";
 import { useProfile } from "../../context/ProfileContext";
@@ -8,12 +8,17 @@ import { Link } from "react-router-dom";
 import { logger } from "../../lib/logger";
 
 export function SearchPage() {
-  const { profile } = useProfile();
+  const { profile, shopperId } = useProfile();
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Product[]>([]);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    api.listProducts().then(setAllProducts).catch((e) => logger.error("failed to load products", e));
+  }, []);
 
   const runSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +29,7 @@ export function SearchPage() {
     try {
       const [allProducts, rec] = await Promise.all([
         api.listProducts(),
-        api.recommendSearch(profile, query),
+        api.recommendSearch(profile, shopperId, query),
       ]);
       const lowered = query.toLowerCase();
       setMatches(
@@ -96,6 +101,23 @@ export function SearchPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
             {decision.recommendations.map((item) => (
               <ProductCard key={item.product.id} item={item} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {allProducts.length > 0 && (
+        <>
+          <h3 style={{ marginTop: 28 }}>All products</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
+            {allProducts.map((p) => (
+              <Link key={p.id} to={`/product/${p.id}`} style={{ textDecoration: "none", color: "var(--fg)" }}>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--surface)" }}>
+                  <div style={{ fontWeight: 700 }}>{p.name}</div>
+                  <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{p.category}</div>
+                  <div style={{ fontWeight: 700, marginTop: 6 }}>${p.price.toFixed(2)}</div>
+                </div>
+              </Link>
             ))}
           </div>
         </>

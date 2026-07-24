@@ -7,6 +7,7 @@ import type {
   RuleCreate,
   RulePreviewResponse,
   RuleReviewResponse,
+  SimilarProductsResponse,
 } from "./types";
 import { logger } from "../lib/logger";
 
@@ -61,20 +62,32 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ profile: profile ?? null }),
     }),
+  previewDraftRule: (payload: RuleCreate) =>
+    request<RulePreviewResponse>("/rules/preview-draft", { method: "POST", body: JSON.stringify(payload) }),
   reviewRules: () => request<RuleReviewResponse>("/rules/review", { method: "POST" }),
 
   // recommendations
-  recommendHome: (profile: Profile) =>
-    request<Decision>("/recommend/home", { method: "POST", body: JSON.stringify({ profile }) }),
-  recommendSearch: (profile: Profile, search_query: string, search_category?: string | null) =>
+  recommendHome: (profile: Profile, shopper_id: string) =>
+    request<Decision>("/recommend/home", { method: "POST", body: JSON.stringify({ profile, shopper_id }) }),
+  recommendSearch: (
+    profile: Profile,
+    shopper_id: string,
+    search_query: string,
+    search_category?: string | null
+  ) =>
     request<Decision>("/recommend/search", {
       method: "POST",
-      body: JSON.stringify({ profile, search_query, search_category: search_category ?? null }),
+      body: JSON.stringify({ profile, shopper_id, search_query, search_category: search_category ?? null }),
     }),
-  recommendPurchase: (profile: Profile, purchased_product_id: string) =>
+  recommendPurchase: (profile: Profile, shopper_id: string, purchased_product_id: string) =>
     request<Decision>("/recommend/purchase", {
       method: "POST",
-      body: JSON.stringify({ profile, purchased_product_id }),
+      body: JSON.stringify({ profile, shopper_id, purchased_product_id }),
+    }),
+  recommendSimilar: (shopper_id: string) =>
+    request<SimilarProductsResponse>("/recommend/similar", {
+      method: "POST",
+      body: JSON.stringify({ shopper_id }),
     }),
 
   // audit

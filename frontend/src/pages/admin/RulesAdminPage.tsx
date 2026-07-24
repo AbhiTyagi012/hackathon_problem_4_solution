@@ -19,6 +19,7 @@ export function RulesAdminPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [nlDraft, setNlDraft] = useState<RuleFormInitial | null>(null);
+  const [draftPreview, setDraftPreview] = useState<RulePreviewResponse | null>(null);
 
   const [nlText, setNlText] = useState("");
   const [nlLoading, setNlLoading] = useState(false);
@@ -64,6 +65,7 @@ export function RulesAdminPage() {
     if (!nlText.trim()) return;
     setNlLoading(true);
     setError("");
+    setDraftPreview(null);
     logger.info("generating rule draft from text", { text: nlText });
     try {
       const res = await api.ruleFromText(nlText);
@@ -71,6 +73,13 @@ export function RulesAdminPage() {
       setNlNote(`${res.notes} (source: ${res.source})`);
       setEditingRule(null);
       setShowForm(true);
+      // Fuse drafting + preview into one step: show the match count before the
+      // admin ever commits, instead of generate -> save -> preview-after-the-fact.
+      try {
+        setDraftPreview(await api.previewDraftRule(res.rule));
+      } catch (previewErr) {
+        logger.error("draft preview failed", previewErr);
+      }
     } catch (e) {
       logger.error("rule generation failed", e);
       setError((e as Error).message);
@@ -91,6 +100,7 @@ export function RulesAdminPage() {
       setShowForm(false);
       setEditingRule(null);
       setNlDraft(null);
+      setDraftPreview(null);
       setNlText("");
       loadRules();
       const fb = await api.previewRule(saved.id);
@@ -165,6 +175,7 @@ export function RulesAdminPage() {
                 setShowForm(true);
                 setEditingRule(null);
                 setNlDraft(null);
+                setDraftPreview(null);
               }}
               style={primaryButton}
             >
@@ -252,6 +263,7 @@ export function RulesAdminPage() {
                       onClick={() => {
                         setEditingRule(rule);
                         setNlDraft(null);
+                        setDraftPreview(null);
                         setShowForm(true);
                       }}
                     >
@@ -274,9 +286,24 @@ export function RulesAdminPage() {
               setShowForm(false);
               setEditingRule(null);
               setNlDraft(null);
+              setDraftPreview(null);
             }}
           >
             {nlNote && !editingRule && <p style={{ fontSize: 12, color: "var(--fg-muted)" }}>{nlNote}</p>}
+            {draftPreview && !editingRule && (
+              <div
+                style={{
+                  ...panel,
+                  marginBottom: 12,
+                  borderColor: draftPreview.needs_product ? "#f59e0b" : "#16a34a",
+                }}
+              >
+                <strong>
+                  {draftPreview.needs_product ? "⚠ No matching product yet" : "✓ Live match preview"}
+                </strong>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{draftPreview.feedback}</div>
+              </div>
+            )}
             <RuleForm
               initial={editingRule ?? nlDraft ?? undefined}
               submitLabel={editingRule ? "Save changes" : "Create rule"}

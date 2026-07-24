@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     rules_dir: str = str(BASE_DIR / "rules" / "data")
     catalog_path: str = str(BASE_DIR / "catalog" / "data" / "products.json")
+    purchase_history_path: str = str(BASE_DIR / "history" / "data" / "purchase_history.json")
 
     # Grok / xAI LLM configuration
     xai_api_key: str = ""
@@ -22,9 +23,18 @@ class Settings(BaseSettings):
     grok_base_url: str = "https://api.x.ai/v1"
     llm_timeout_seconds: float = 30.0
 
+    # Gemini embeddings configuration
+    gemini_api_key: str = ""
+    gemini_embedding_model: str = "text-embedding-004"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.xai_api_key.strip())
+
+    @property
+    def embedding_enabled(self) -> bool:
+        return bool(self.gemini_api_key.strip())
 
     @property
     def cors_origin_list(self) -> list[str]:
