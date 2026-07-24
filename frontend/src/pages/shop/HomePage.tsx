@@ -5,6 +5,9 @@ import type { Decision, Product, SimilarProduct } from "../../api/types";
 import { useProfile } from "../../context/ProfileContext";
 import { ProductCard } from "../../components/ProductCard";
 import { DecisionBanner } from "../../components/DecisionBanner";
+import { CategoryCatalog } from "../../components/CategoryCatalog";
+import { ProductRail } from "../../components/ProductCarousel";
+import { SimilarProductCard } from "../../components/SimilarProductCard";
 import { logger } from "../../lib/logger";
 
 export function HomePage() {
@@ -37,109 +40,49 @@ export function HomePage() {
 
   const hasProfile = Boolean(profile.budget_band || profile.max_budget || profile.age || profile.location);
   const recommendedIds = new Set(decision?.recommendations.map((r) => r.product.id) ?? []);
-  const otherProducts = allProducts.filter((p) => !recommendedIds.has(p.id));
+  const hasRecommendations = (decision?.recommendations.length ?? 0) > 0;
+  const hasSimilar = similar.length > 0;
 
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 16px" }}>
-      <h2>Recommended for you</h2>
-      {!hasProfile && (
-        <p style={{ color: "var(--fg-muted)" }}>
-          Tip: set up your <Link to="/profile">profile</Link> for more targeted recommendations. Showing
-          a cold-start view for now.
-        </p>
-      )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {loading && <p>Loading…</p>}
-      {decision && (
-        <>
+    <div className="shop-page">
+      {loading && <p className="page-status">Loading your personalized storefront…</p>}
+      {error && <p className="page-error">{error}</p>}
+
+      {!loading && hasRecommendations && decision && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h2>Recommended for you</h2>
+            {!hasProfile && (
+              <p className="section-subtitle">
+                Tip: set up your <Link to="/profile">profile</Link> for more targeted recommendations.
+              </p>
+            )}
+          </div>
           <DecisionBanner decision={decision} />
-          {decision.recommendations.length > 0 ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 16,
-                marginTop: 16,
-              }}
-            >
-              {decision.recommendations.map((item) => (
-                <ProductCard key={item.product.id} item={item} />
-              ))}
-            </div>
-          ) : (
-            <p style={{ color: "var(--fg-muted)", marginTop: 12 }}>
-              No rules matched your profile yet — browse all products below.
-            </p>
-          )}
-        </>
+          <ProductRail>
+            {decision.recommendations.map((item) => (
+              <ProductCard key={item.product.id} item={item} />
+            ))}
+          </ProductRail>
+        </section>
+      )}
+
+      {!loading && hasSimilar && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h2>Based on your purchase history</h2>
+            <p className="section-subtitle">Similar picks powered by embeddings, not rules</p>
+          </div>
+          <ProductRail>
+            {similar.map((item) => (
+              <SimilarProductCard key={item.product.id} item={item} />
+            ))}
+          </ProductRail>
+        </section>
       )}
 
       {!loading && (
-        <>
-          <h2 style={{ marginTop: 36 }}>Based on your purchase history</h2>
-          {similar.length === 0 ? (
-            <p style={{ color: "var(--fg-muted)" }}>
-              No purchase history yet — buy something and this rail will fill in with similar
-              products (powered by embeddings, not rules).
-            </p>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 16,
-                marginTop: 16,
-              }}
-            >
-              {similar.map((item) => (
-                <div
-                  key={item.product.id}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 12,
-                    padding: 16,
-                    background: "var(--surface)",
-                  }}
-                >
-                  <Link
-                    to={`/product/${item.product.id}`}
-                    style={{ fontWeight: 700, textDecoration: "none", color: "var(--fg)" }}
-                  >
-                    {item.product.name}
-                  </Link>
-                  <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-                    {item.product.category} · {item.product.brand}
-                  </div>
-                  <div style={{ fontWeight: 700, marginTop: 6 }}>${item.product.price.toFixed(2)}</div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6 }}>{item.reason}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <h2 style={{ marginTop: 36 }}>All products</h2>
-          {otherProducts.length === 0 && (
-            <p style={{ color: "var(--fg-muted)" }}>No other products to show.</p>
-          )}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              gap: 16,
-              marginTop: 16,
-            }}
-          >
-            {otherProducts.map((product) => (
-              <Link key={product.id} to={`/product/${product.id}`} style={{ textDecoration: "none", color: "var(--fg)" }}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--surface)" }}>
-                  <div style={{ fontWeight: 700 }}>{product.name}</div>
-                  <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{product.category} · {product.brand}</div>
-                  <div style={{ fontWeight: 700, marginTop: 6 }}>${product.price.toFixed(2)}</div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </>
+        <CategoryCatalog products={allProducts} excludeIds={recommendedIds} />
       )}
     </div>
   );

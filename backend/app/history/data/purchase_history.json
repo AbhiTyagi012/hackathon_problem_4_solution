@@ -16,5 +16,15 @@
   },
   "shopper-demo-new": {
     "purchased_product_ids": []
+  },
+  "ab678972-89f0-4b73-be87-c017344a1308": {
+    "purchased_product_ids": [
+      "p002"
+    ]
+  },
+  "31f820b5-6836-4e23-9240-3fe0eade1a54": {
+    "purchased_product_ids": [
+      "p005"
+    ]
   }
 }
