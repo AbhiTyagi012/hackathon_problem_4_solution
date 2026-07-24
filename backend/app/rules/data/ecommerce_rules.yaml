@@ -1,0 +1,114 @@
+rules:
+- id: rule-fitness
+  name: Fitness fan -> gear
+  description: Sports/fitness interests get fitness gear.
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: interests
+    operator: any_in
+    value:
+    - fitness
+    - sports
+  recommend:
+    products: []
+    categories:
+    - fitness
+    - footwear
+    tags:
+    - fitness
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T08:58:09.174316Z'
+- id: suggest-headphones-to-a-person-who-is-bu-4815d7
+  name: suggest headphones to a person who is bu…
+  description: 'Auto-generated from: suggest headphones to a person who is buying
+    a gaming laptop'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: interests
+    operator: any_in
+    value:
+    - gaming
+  recommend:
+    products: []
+    categories:
+    - gaming
+    - phones
+    tags:
+    - gaming
+    - headphones
+    - laptop
+    - phone
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T10:14:25.616880Z'
+- id: rule-beauty
+  name: Beauty interest -> skincare
+  description: Beauty interests get skincare and makeup.
+  enabled: true
+  priority: 65
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: interests
+    operator: any_in
+    value:
+    - beauty
+    - skincare
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - beauty
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T08:58:09.174322Z'
+- id: rule-travel
+  name: Traveler -> travel essentials
+  description: Travel interests get travel gear.
+  enabled: true
+  priority: 65
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: interests
+    operator: any_in
+    value:
+    - travel
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - travel
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T08:58:09.174325Z'
+- id: new-rule-41f971
+  name: new rule
+  description: 'shoes '
+  enabled: true
+  priority: 50
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: ''
+    operator: eq
+    value: ''
+  recommend:
+    products: []
+    categories: []
+    tags: []
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T09:18:17.289240Z'
