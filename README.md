@@ -25,13 +25,17 @@ Browser (React SPA)
       │
       ▼
 FastAPI backend
- ├─ api/routes/*        REST endpoints (rules, recommend, evaluate, catalog, health)
+ ├─ api/routes/*        REST endpoints (rules, recommend, evaluate, catalog, logs, health)
  ├─ services/*          orchestration: recommendation_service, rule_admin_service, audit_store
  ├─ engine/*            domain-agnostic rule engine (operators, condition tree, strategies)
  ├─ rules/repository.py rules persisted as YAML (read + write)
  ├─ catalog/repository.py seeded product catalog (JSON)
  ├─ history/repository.py per-shopper purchase history (JSON) — the source of purchase_tags
- ├─ embeddings/*         Gemini embeddings + FAISS similarity index (purchase-history rail)
+ ├─ embeddings/*         Gemini embeddings + two FAISS indexes: a persisted Product Vector
+ │                       Index (purchase-history rail) and an in-memory Rule Vector Index
+ │                       (RAG retrieval for the rule-authoring conflict-check)
+ ├─ core/logging.py      ring buffer + SSE broadcast — powers /admin/logs, no new logging
+ │                       calls anywhere else needed
  └─ llm/*               Groq integration + deterministic offline fallbacks
 ```
 
@@ -48,14 +52,19 @@ flowchart LR
     RS --> CATALOG[Product Repository]
     RS --> AUDIT[Audit Store]
     RS --> HIST[Purchase History Repository]
-    RS --> VEC[FAISS Vector Index]
+    RS --> VEC[Product Vector Index]
     VEC --> EMB[Gemini EmbeddingService]
     RAS --> RULES[Rule Repository - YAML]
-    RS --> LLM[Groq LLMService]
-    RAS --> LLM
+    RAS --> RVEC[Rule Vector Index]
+    RVEC --> EMB
+    RAS -->|RAG conflict-check + NL authoring| LLM[Groq LLMService]
     LLM -. no key .-> FALLBACK[Deterministic Fallback]
     EMB -. no key .-> HASHFALLBACK[Deterministic Hash Vector]
+    API -.every log line.-> LOGH[BroadcastLogHandler]
+    LOGH -->|SSE| UI
 ```
+
+Note what's *not* on this diagram on purpose: `RecommendationService` has no edge to `LLMService` — the recommendation engine never calls an LLM. An earlier design considered an AI cold-start fallback for shoppers with no history; it was replaced by the deterministic `rule-catch-all-trending` rule instead, so the rail stays 100% rule-based end to end (see Explainability below). The `Decision.used_ai_fallback` field is still in the schema but is currently always `false`.
 
 **Why it's built this way:**
 - **Operator registry** (`engine/operators.py`) — adding a new comparison type is one function +
