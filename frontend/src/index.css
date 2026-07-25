@@ -4,8 +4,8 @@
   --fg: #14141a;
   --fg-muted: #6b6b76;
   --border: #e3e3e8;
-  --accent: #6d28d9;
-  --accent-soft: #ede9fe;
+  --accent: #d6006d;
+  --accent-soft: #fce7f3;
   --shadow: 0 8px 24px rgba(20, 20, 26, 0.08);
   --radius: 14px;
 
@@ -23,8 +23,8 @@
     --fg: #f0f0f3;
     --fg-muted: #9b9ba5;
     --border: #2e2e38;
-    --accent: #a78bfa;
-    --accent-soft: #2e1065;
+    --accent: #f472b6;
+    --accent-soft: #831843;
     --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
 }
@@ -400,7 +400,7 @@ input, select, textarea, button {
 .badge-ai {
   font-size: 0.68rem;
   font-weight: 700;
-  color: #7c3aed;
+  color: var(--accent);
   background: var(--accent-soft);
   border-radius: 999px;
   padding: 3px 8px;
