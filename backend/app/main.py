@@ -49,10 +49,10 @@ async def request_logging(request: Request, call_next):
 
 @app.exception_handler(PlatformError)
 async def platform_error_handler(request: Request, exc: PlatformError):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.__class__.__name__, "message": exc.message},
-    )
+    content = {"error": exc.__class__.__name__, "message": exc.message}
+    if exc.detail is not None:
+        content["detail"] = exc.detail
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 app.include_router(health.router)

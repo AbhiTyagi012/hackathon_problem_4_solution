@@ -6,6 +6,7 @@ from app.models.schemas import (
     NlRuleResponse,
     Rule,
     RuleCreate,
+    RuleDraftPipelineResponse,
     RulePreviewRequest,
     RulePreviewResponse,
     RuleReorder,
@@ -63,6 +64,14 @@ def preview_rule(
 def preview_draft_rule(payload: RuleCreate, svc: RuleAdminService = Depends(get_rule_admin_service)):
     """Preview an unsaved draft rule (e.g. straight from NL authoring) before it's ever committed."""
     return svc.preview_draft(payload, None)
+
+
+@router.post("/draft-with-review", response_model=RuleDraftPipelineResponse)
+def draft_rule_with_review(payload: NlRuleRequest, svc: RuleAdminService = Depends(get_rule_admin_service)):
+    """Interpret -> Retrieve (RAG over existing rules) -> Conflict-check -> Validate/repair ->
+    Preview, in one call. Conflict-check warns (see `conflict_check.verdict`) — it never blocks;
+    the admin still saves via a separate POST /rules or PUT /rules/{id} call."""
+    return svc.draft_rule_with_pipeline(payload.text)
 
 
 @router.post("/review", response_model=RuleReviewResponse)

@@ -19,6 +19,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 FALLBACK_DIM = 256
+BATCH_SIZE = 50  # Gemini's batchEmbedContents limit is 100; stay well under it
 
 
 def fallback_embed(text: str) -> list[float]:
@@ -39,6 +40,15 @@ class EmbeddingService(ABC):
 
     @abstractmethod
     def embed(self, text: str) -> tuple[list[float], str]: ...
+
+    @abstractmethod
+    def embed_batch(self, texts: list[str]) -> tuple[list[list[float]], str]:
+        """Embed many texts in as few network round-trips as possible — building
+        an index one `embed()` call per item does N sequential requests, which
+        for a catalog of a few hundred products means minutes of blocking
+        startup latency. Real impls should batch; the ABC exists so building an
+        index never has to choose between "slow" and "provider-specific"."""
+        ...
 
 
 class GeminiEmbeddingService(EmbeddingService):
@@ -66,3 +76,32 @@ class GeminiEmbeddingService(EmbeddingService):
         except Exception:
             logger.exception("Gemini embed failed, using offline fallback vector")
             return fallback_embed(text), "fallback"
+
+    def embed_batch(self, texts: list[str]) -> tuple[list[list[float]], str]:
+        if not texts:
+            return [], "fallback"
+        if not self.is_enabled():
+            logger.info("embed_batch: Gemini disabled, using offline fallback vectors")
+            return [fallback_embed(t) for t in texts], "fallback"
+        try:
+            model = self._settings.gemini_embedding_model
+            all_values: list[list[float]] = []
+            for start in range(0, len(texts), BATCH_SIZE):
+                chunk = texts[start : start + BATCH_SIZE]
+                resp = httpx.post(
+                    f"{self._settings.gemini_base_url}/models/{model}:batchEmbedContents",
+                    params={"key": self._settings.gemini_api_key},
+                    json={
+                        "requests": [
+                            {"model": f"models/{model}", "content": {"parts": [{"text": t}]}} for t in chunk
+                        ]
+                    },
+                    timeout=self._settings.llm_timeout_seconds,
+                )
+                resp.raise_for_status()
+                all_values.extend(e["values"] for e in resp.json()["embeddings"])
+            logger.info("embed_batch: Gemini embedded %d text(s) in %d batch call(s)", len(texts), -(-len(texts) // BATCH_SIZE))
+            return all_values, "gemini"
+        except Exception:
+            logger.exception("Gemini embed_batch failed partway through; using offline fallback vectors for all")
+            return [fallback_embed(t) for t in texts], "fallback"

@@ -10,7 +10,7 @@ system**, with:
 - A **shopper UI** — home (three rails: rule-based recommendations, purchase-history similarity,
   and all products), search → recommended rail, buy → post-purchase recommendations — each with a
   "why this?" explanation.
-- An **admin UI** — create rules from plain English (via Grok) with a live match-count preview
+- An **admin UI** — create rules from plain English (via Groq) with a live match-count preview
   *before* saving, a condition builder, priority reordering, and an AI ruleset-quality review.
 
 Interest is **not** a field a shopper fills in — no real e-commerce platform asks that. It's derived
@@ -32,7 +32,7 @@ FastAPI backend
  ├─ catalog/repository.py seeded product catalog (JSON)
  ├─ history/repository.py per-shopper purchase history (JSON) — the source of purchase_tags
  ├─ embeddings/*         Gemini embeddings + FAISS similarity index (purchase-history rail)
- └─ llm/*               Grok (xAI) integration + deterministic offline fallbacks
+ └─ llm/*               Groq integration + deterministic offline fallbacks
 ```
 
 ```mermaid
@@ -51,7 +51,7 @@ flowchart LR
     RS --> VEC[FAISS Vector Index]
     VEC --> EMB[Gemini EmbeddingService]
     RAS --> RULES[Rule Repository - YAML]
-    RS --> LLM[Grok LLMService]
+    RS --> LLM[Groq LLMService]
     RAS --> LLM
     LLM -. no key .-> FALLBACK[Deterministic Fallback]
     EMB -. no key .-> HASHFALLBACK[Deterministic Hash Vector]
@@ -68,7 +68,7 @@ flowchart LR
   weighted-score aggregation across matched rules; adding a new ranking strategy is one function.
 - **AuditStore is an interface** (`services/audit_store.py`) — every decision is recorded; a
   DB-backed store could replace the in-memory one with no caller changes.
-- **LLMService is an interface** (`llm/service.py`) — Grok is called through one seam, and every
+- **LLMService is an interface** (`llm/service.py`) — Groq is called through one seam, and every
   feature has a deterministic fallback (`llm/fallback.py`) so the app fully works with no API key.
 - **PurchaseHistoryRepository is an interface** (`history/repository.py`) — today it's JSON-backed;
   same swap-for-a-database story as rules/audit.
@@ -121,7 +121,7 @@ Every `/recommend/*` and `/evaluate` response is a `Decision` with:
   `"age=15 did not match 'gte' 18"`)
 - `recommendations` — ranked products, each listing which rule(s) contributed and their score
 - `explanation` — one human-readable sentence summarizing the decision
-- `used_ai_fallback` — true when no rule matched and Grok's cold-start suggestions were used instead
+- `used_ai_fallback` — true when no rule matched and Groq's cold-start suggestions were used instead
 
 The purchase-history rail (`POST /recommend/similar`) is deliberately **not** a `Decision` — it has
 no rule trace, only a similarity score, so it gets its own `SimilarProductsResponse` shape instead
@@ -139,23 +139,23 @@ of diluting the rule engine's explainability format with a different mechanism.
 | Add auth | add a dependency to `api/routes/rules.py` (admin) — routes are otherwise unauthenticated by design |
 | Swap rule storage to a DB | implement `RuleRepository` (rules/repository.py) against a table |
 | Swap purchase history to a DB | implement `PurchaseHistoryRepository` (history/repository.py) against a table |
-| Integrate an external API | already done — the Grok/xAI integration in `llm/service.py`, and the Gemini embeddings integration in `embeddings/service.py` |
+| Integrate an external API | already done — the Groq integration in `llm/service.py`, and the Gemini embeddings integration in `embeddings/service.py` |
 
 ## AI features
 
 All optional — the app runs fully offline with deterministic fallbacks if no API key is set.
 
-**Grok (xAI)** — admin-tooling assistant, one seam (`llm/service.py`):
-1. **NL → rule authoring**: `POST /rules/from-text` — admin describes a rule in English, Grok
+**Groq** — admin-tooling assistant, one seam (`llm/service.py`):
+1. **NL → rule authoring**: `POST /rules/from-text` — admin describes a rule in English, Groq
    returns the structured rule; the admin UI immediately shows a live match-count preview
    (`POST /rules/preview-draft`) in the same modal, before the rule is ever saved.
-2. **Cold-start fallback**: when zero rules match a shopper, `RecommendationService` asks Grok to
+2. **Cold-start fallback**: when zero rules match a shopper, `RecommendationService` asks Groq to
    suggest catalog products; these are labeled "AI suggestion" in the UI and `used_ai_fallback: true`
    in the API — clearly distinguished from rule-driven picks.
 3. **Post-save feedback loop**: after saving a rule, the admin UI calls `POST /rules/{id}/preview`;
-   if the rule's recommend targets resolve to zero catalog products, Grok suggests a concrete
+   if the rule's recommend targets resolve to zero catalog products, Groq suggests a concrete
    product to add (or the admin can adjust the rule).
-4. **Ruleset quality review**: `POST /rules/review` — Grok scans all rules for conflicts,
+4. **Ruleset quality review**: `POST /rules/review` — Groq scans all rules for conflicts,
    redundancy, and coverage gaps.
 
 **Gemini embeddings** — the purchase-history rail, one seam (`embeddings/service.py`):
@@ -172,7 +172,7 @@ All optional — the app runs fully offline with deterministic fallbacks if no A
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # optionally set XAI_API_KEY and/or GEMINI_API_KEY
+cp .env.example .env   # optionally set GROQ_API_KEY and/or GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
 Swagger UI: http://localhost:8000/docs
@@ -188,12 +188,12 @@ Open http://localhost:5173 (shopper) and http://localhost:5173/admin (admin).
 
 ### Docker Compose (both services)
 ```bash
-cp backend/.env.example backend/.env   # optionally set XAI_API_KEY and/or GEMINI_API_KEY
+cp backend/.env.example backend/.env   # optionally set GROQ_API_KEY and/or GEMINI_API_KEY
 docker compose up --build
 ```
 Backend on `:8000`, frontend on `:3000`. The backend service loads `backend/.env` directly
-(`env_file` in `docker-compose.yml`) — set `XAI_API_KEY` and/or `GEMINI_API_KEY` there to enable
-live Grok/Gemini calls. `backend/.env` is optional (the compose file treats it as
+(`env_file` in `docker-compose.yml`) — set `GROQ_API_KEY` and/or `GEMINI_API_KEY` there to enable
+live Groq/Gemini calls. `backend/.env` is optional (the compose file treats it as
 `required: false`), so `docker compose up` still works with zero setup — every AI feature just runs
 on its deterministic fallback instead.
 

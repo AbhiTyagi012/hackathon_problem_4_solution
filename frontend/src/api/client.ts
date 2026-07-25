@@ -5,6 +5,7 @@ import type {
   Profile,
   Rule,
   RuleCreate,
+  RuleDraftPipelineResponse,
   RulePreviewResponse,
   RuleReviewResponse,
   SimilarProductsResponse,
@@ -12,6 +13,23 @@ import type {
 import { logger } from "../lib/logger";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+// Thrown on any non-2xx response. `status`/`error` mirror the backend's
+// {"error", "message", "detail"} shape; `detail` carries structured extra data
+// (e.g. a ConflictCheckResult on 409) so callers can act on it instead of just
+// showing the message string.
+export class ApiError extends Error {
+  status: number;
+  error: string;
+  detail?: unknown;
+
+  constructor(status: number, error: string, message: string, detail?: unknown) {
+    super(message);
+    this.status = status;
+    this.error = error;
+    this.detail = detail;
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = options.method || "GET";
@@ -30,7 +48,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     logger.error(`${method} ${path} -> ${res.status} (${durationMs}ms)`, body);
-    throw new Error(body.message || `${res.status} ${res.statusText}`);
+    throw new ApiError(
+      res.status,
+      body.error || "Error",
+      body.message || `${res.status} ${res.statusText}`,
+      body.detail
+    );
   }
   logger.info(`${method} ${path} -> ${res.status} (${durationMs}ms)`);
   return res.json();
@@ -64,6 +87,11 @@ export const api = {
     }),
   previewDraftRule: (payload: RuleCreate) =>
     request<RulePreviewResponse>("/rules/preview-draft", { method: "POST", body: JSON.stringify(payload) }),
+  draftRuleWithReview: (text: string) =>
+    request<RuleDraftPipelineResponse>("/rules/draft-with-review", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
   reviewRules: () => request<RuleReviewResponse>("/rules/review", { method: "POST" }),
 
   // recommendations

@@ -86,6 +86,7 @@ class RuleCreate(BaseModel):
     priority: int = 100
     condition: Condition
     recommend: RecommendAction = Field(default_factory=RecommendAction)
+    confirm_conflict: bool = False  # bypass the RAG conflict-check block; set after an explicit admin confirmation
 
 
 class RuleReorder(BaseModel):
@@ -206,8 +207,8 @@ class NlRuleRequest(BaseModel):
 
 
 class NlRuleResponse(BaseModel):
-    rule: RuleCreate
-    source: str = "grok"  # "grok" | "fallback"
+    rule: Optional[RuleCreate] = None  # None when the request is outside the supported scope
+    source: str = "groq"  # "groq" | "fallback"
     notes: str = ""
 
 
@@ -226,4 +227,39 @@ class RulePreviewResponse(BaseModel):
 
 class RuleReviewResponse(BaseModel):
     review: str
-    source: str = "grok"
+    source: str = "groq"
+
+
+# --------------------------------------------------------------------------- #
+# Rule authoring pipeline: Interpret -> Retrieve -> Conflict-check -> Validate
+# -> Preview. Each step is inspectable via `PipelineStep`, and conflict-check
+# is RAG (retrieval over the ruleset via RuleVectorIndex), not a whole-ruleset
+# dump like RuleReviewResponse above.
+# --------------------------------------------------------------------------- #
+class RuleConflictCandidate(BaseModel):
+    rule_id: str
+    rule_name: str
+    similarity: float
+    note: str = ""
+
+
+class ConflictCheckResult(BaseModel):
+    verdict: str = "ok"  # "ok" | "overlap" | "duplicate"
+    candidates: list[RuleConflictCandidate] = Field(default_factory=list)
+    notes: str = ""
+    source: str = "groq"  # "groq" | "fallback"
+
+
+class PipelineStep(BaseModel):
+    agent: str
+    status: str  # "ok" | "repaired" | "unsupported" | "failed"
+    detail: str = ""
+
+
+class RuleDraftPipelineResponse(BaseModel):
+    rule: Optional[RuleCreate] = None
+    conflict_check: Optional[ConflictCheckResult] = None
+    preview: Optional[RulePreviewResponse] = None
+    steps: list[PipelineStep] = Field(default_factory=list)
+    source: str = "groq"
+    notes: str = ""

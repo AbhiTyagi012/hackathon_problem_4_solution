@@ -6,9 +6,10 @@ from functools import lru_cache
 from app.catalog.repository import ProductRepository
 from app.core.config import get_settings
 from app.embeddings.index import ProductVectorIndex
+from app.embeddings.rule_index import RuleVectorIndex
 from app.embeddings.service import EmbeddingService, GeminiEmbeddingService
 from app.history.repository import FilePurchaseHistoryRepository, PurchaseHistoryRepository
-from app.llm.service import GrokLLMService, LLMService
+from app.llm.service import GroqLLMService, LLMService
 from app.rules.repository import FileRuleRepository, RuleRepository
 from app.services.audit_store import AuditStore, InMemoryAuditStore
 from app.services.recommendation_service import RecommendationService
@@ -37,7 +38,7 @@ def get_audit_store() -> AuditStore:
 
 @lru_cache
 def get_llm_service() -> LLMService:
-    return GrokLLMService(get_settings())
+    return GroqLLMService(get_settings())
 
 
 @lru_cache
@@ -47,7 +48,12 @@ def get_embedding_service() -> EmbeddingService:
 
 @lru_cache
 def get_vector_index() -> ProductVectorIndex:
-    return ProductVectorIndex(get_embedding_service(), get_product_repository())
+    return ProductVectorIndex(get_embedding_service(), get_product_repository(), get_settings().embeddings_dir)
+
+
+@lru_cache
+def get_rule_vector_index() -> RuleVectorIndex:
+    return RuleVectorIndex(get_embedding_service(), get_rule_repository())
 
 
 @lru_cache
@@ -67,4 +73,5 @@ def get_rule_admin_service() -> RuleAdminService:
         rule_repo=get_rule_repository(),
         product_repo=get_product_repository(),
         llm_service=get_llm_service(),
+        rule_vector_index=get_rule_vector_index(),
     )

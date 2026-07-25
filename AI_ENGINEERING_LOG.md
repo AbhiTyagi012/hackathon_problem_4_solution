@@ -1,11 +1,16 @@
 # AI Engineering Log
 
-This project was built across two sessions using **Claude Code** (Anthropic's agentic CLI, running
+This project was built across three sessions using **Claude Code** (Anthropic's agentic CLI, running
 Claude Sonnet 5) as the sole development tool — planning, code generation, test writing, and
-debugging. The product itself additionally integrates the **Grok (xAI) API** and, as of session 2,
-the **Gemini embeddings API** as runtime features (NL→rule authoring, cold-start recommendations,
-ruleset review, purchase-history similarity) — those are features of the shipped app, not a
-build-tool; documented separately in the README under "AI features."
+debugging. The product itself additionally integrates an LLM API and, as of session 2, the
+**Gemini embeddings API** as runtime features (NL→rule authoring, cold-start recommendations,
+ruleset review, purchase-history similarity, RAG-based conflict-checking as of session 3) — those
+are features of the shipped app, not a build-tool; documented separately in the README under
+"AI features." **Note:** sessions 1-2 below describe the LLM provider as "Grok (xAI)", which was the
+original intent — session 3 discovered the configured API key was actually for Groq (a different,
+unrelated provider with a confusingly similar name) and corrected the provider references
+throughout; see §7. The sessions 1-2 text is left as originally written rather than silently
+rewritten, since it accurately reflects what was built and believed at the time.
 
 ## 1. AI tools used
 
@@ -185,3 +190,90 @@ actual deliverable per the problem statement.
 3. **Stale `interests=[...]` construction in the admin preview default profile** (see §3) — a
    straightforward miss from removing a field in one file without grepping for every construction
    site; caught before running anything by re-reading the file first.
+
+## Session 3 — RAG, persistent embeddings, a real multi-agent pipeline, and a provider mix-up
+
+The user asked directly why rule authoring didn't use RAG or multi-agent orchestration and where
+embeddings were actually stored, given the stated goal of making the platform genuinely AI-heavy.
+The honest answer: neither had been built — both were explicitly deferred to a later pass at the end
+of session 2, and the FAISS product index was in-memory only, re-embedded from scratch every process
+restart. This session built both, live-tested every new piece against real Gemini/Groq API calls
+(not just the offline fallback path), and found three real bugs doing so.
+
+### Key prompts / interaction flow
+1. User: *"is it applying rag like saving the rule and check the rule against other rule and also
+   where we are storing the embedding data as I cannot see any storage for embeddings"* → Claude
+   audited the actual code rather than assuming, confirmed both gaps directly (no RAG on save, no
+   persisted index — the FAISS index lives in `lru_cache`d process memory only), and named the one
+   existing partial mechanism (the manual, non-RAG "Review ruleset" button) precisely so as not to
+   overstate what existed.
+2. User: *"why we are not using embedding, rag and multi agents"* → Claude proposed a concrete
+   architecture (persist the product index; a separate, non-persisted `RuleVectorIndex` for RAG,
+   since rules mutate constantly and the catalog doesn't; a five-step pipeline — Interpret → Retrieve
+   → Conflict-check → Validate/repair → Preview) rather than treating "add RAG and multi-agent" as
+   self-explanatory, then planned it formally (Plan mode: explore → design → user approval) before
+   writing code, same discipline as session 2's larger rework.
+3. During implementation, live `curl` testing against the user's real Gemini key surfaced two
+   provider-level bugs (below) that no amount of code review would have caught, since both only
+   manifest against a live API. After fixing them, the user said *"use GROQ_API_KEY"* — the .env
+   file's key was for Groq, not xAI's Grok, despite the settings field being named `xai_api_key`; the
+   provider had silently never been live in sessions 1-2, always falling through to the offline
+   fallback. Claude verified the correct base URL, model name, and endpoint shape against the real
+   key (`api.groq.com/openai/v1`, `llama-3.3-70b-versatile`) before renaming `GrokLLMService` →
+   `GroqLLMService` and every associated field/env-var/doc reference, rather than guessing.
+
+### AI-generated code accepted as-is
+- `PurchaseHistoryRepository`-style persistence pattern reused for `ProductVectorIndex.save()`/load —
+  FAISS binary + a JSON sidecar (product-id order + source), invalidated by comparing the sidecar's
+  id list against the live catalog.
+- The five-step pipeline structure in `RuleAdminService.draft_rule_with_pipeline` — each step as a
+  `PipelineStep(agent, status, detail)`, letting the admin UI render an inspectable trace instead of
+  one opaque result.
+
+### AI-generated code that was rejected or modified
+- **First cut of `similar_to_purchases` re-embedded already-indexed products per request** instead
+  of reading their vectors back out of the built index — fixed by adding `get_vector()` (session 2,
+  caught before this session, listed here as it's the same class of mistake avoided this time).
+- **First cut of persistence stored un-normalized vectors from a fresh build, but normalized vectors
+  from a disk reload** (`index.reconstruct()` returns the normalized copy actually indexed) — the
+  "nearest purchased product" citation logic would have ranked differently before vs. after a
+  restart. Caught by re-reading the diff before running anything, not by a test; fixed by storing
+  the normalized `matrix` values consistently in both code paths.
+- **First cut of `embed`/`embed_batch` used the default Gemini model name `text-embedding-004`**,
+  which doesn't exist for this API version — confirmed via `ListModels` and corrected to
+  `gemini-embedding-001` before writing a single line of dependent code, exactly the "verify against
+  the real key" discipline the previous session's mistakes argued for.
+
+### How AI outputs were validated
+- **74 pytest tests** (up from 61) — new files for the rule-vector index, conflict-check heuristic,
+  and embedding persistence round-trip (save → new instance → load → assert vectors match without a
+  second embed call).
+- **Live end-to-end verification against real provider APIs**, not just the offline fallback:
+  - `curl` to Gemini's real `embedContent`/`batchEmbedContents`/`ListModels` endpoints directly (bypassing the app) to diagnose the 404 before touching code.
+  - Two full `uvicorn` process restarts to confirm the persisted index actually loads from disk
+    (log line asserted, not assumed) instead of re-embedding.
+  - `/rules/draft-with-review` exercised with three cases: a draft textually close to an existing
+    rule (confirmed RAG retrieval + conflict flag naming the specific rule), a novel draft (confirmed
+    verdict `"ok"`), and rubbish text (confirmed the pipeline stops after the Interpreter step rather
+    than running Retrieve/Conflict-check/Validate against nothing).
+  - `curl` directly against `api.groq.com` with the real key before renaming anything, so the
+    `GroqLLMService` rename was verified working, not just compiling.
+
+### Bugs found and how they were resolved
+1. **Wrong default Gemini embedding model name** (`text-embedding-004`, doesn't exist for v1beta) —
+   found because the *first* live embeddings call in this session's testing 404'd; fixed by querying
+   `ListModels` for the real value instead of guessing again.
+2. **256 sequential embedding HTTP calls on first build** (~3.5 minutes blocking startup latency) —
+   found by a `curl` call timing out during manual verification; fixed by adding a real
+   `embed_batch()` using Gemini's `batchEmbedContents` endpoint (verified to exist and work before
+   relying on it), cutting ~256 calls to ~6.
+3. **Vector-normalization inconsistency between a fresh build and a disk-loaded index** (see above) —
+   found by re-reading the persistence diff, not by a failing test; a case where the test suite
+   passing was not sufficient evidence of correctness, and manual reasoning about the two code paths
+   was what actually caught it.
+4. **Provider name/config mismatch**: the app was built and documented as using Grok (xAI), but the
+   only real key ever configured was for Groq — meaning the "real LLM" path had silently never run in
+   sessions 1-2; every prior claim of Grok being exercised live was actually the offline fallback.
+   Not a code bug, but a configuration/naming trap worth recording: a plausible-sounding, similarly-
+   named provider silently masked that the live path was never tested until this session's direct
+   `curl` verification forced the question.

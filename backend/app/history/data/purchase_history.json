@@ -16,5 +16,10 @@
   },
   "shopper-demo-new": {
     "purchased_product_ids": []
+  },
+  "eeef9f6e-6323-4237-822d-2bac7834fe0a": {
+    "purchased_product_ids": [
+      "p001"
+    ]
   }
 }

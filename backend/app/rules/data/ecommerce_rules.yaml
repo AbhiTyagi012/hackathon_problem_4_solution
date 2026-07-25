@@ -21,8 +21,8 @@ rules:
     tags:
     - fitness
     score: 2.0
-  version: 1
-  updated_at: '2026-07-24T11:26:52.225961Z'
+  version: 3
+  updated_at: '2026-07-24T23:33:54.585503Z'
 - id: sale-for-makeup-product-c68d59
   name: sale for makeup product
   description: 'Auto-generated from: sale for makeup product'
@@ -93,6 +93,94 @@ rules:
     score: 2.0
   version: 1
   updated_at: '2026-07-24T16:30:25.625645Z'
+- id: if-user-buys-laptop-suggest-keyboard-95f0b9
+  name: if user buys laptop suggest keyboard
+  description: 'Auto-generated from: if user buys laptop suggest keyboard'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - keyboard
+    - laptop
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - keyboard
+    - laptop
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-24T23:58:31.000764Z'
+- id: makeup-sale-e2d88f
+  name: makeup sale
+  description: 'Auto-generated from: makeup sale'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - makeup
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - makeup
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T00:52:41.540423Z'
+- id: if-user-buys-laptop-suggest-keyboard-04de7b
+  name: if user buys laptop suggest keyboard
+  description: 'Auto-generated from: if user buys laptop suggest keyboard'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - keyboard
+    - laptop
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - keyboard
+    - laptop
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T00:53:52.655465Z'
+- id: sale-for-makeup-4415d7
+  name: sale for makeup
+  description: 'Auto-generated from: sale for makeup'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - makeup
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - makeup
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T01:00:03.019975Z'
 - id: rule-beauty
   name: Beauty interest -> skincare
   description: Beauty interests get skincare and makeup.

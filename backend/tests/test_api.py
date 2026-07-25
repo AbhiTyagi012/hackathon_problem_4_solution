@@ -66,6 +66,53 @@ def test_create_update_delete_rule_via_api(client):
     assert client.get(f"/rules/{rule_id}").status_code == 404
 
 
+def test_create_rule_blocks_on_conflict_with_existing_rule(client):
+    """Same field + overlapping value as the seeded rule-beauty should be
+    blocked (409) rather than silently saved — that's the actual enforcement
+    point, not just the optional NL-preview pipeline."""
+    payload = {
+        "name": "Duplicate beauty rule",
+        "priority": 50,
+        "condition": {"field": "purchase_tags", "operator": "any_in", "value": ["beauty"]},
+        "recommend": {"tags": ["beauty"], "score": 1.0},
+    }
+    resp = client.post("/rules", json=payload)
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["error"] == "RuleConflictError"
+    assert body["detail"]["verdict"] != "ok"
+    assert any(c["rule_id"] == "rule-beauty" for c in body["detail"]["candidates"])
+
+
+def test_create_rule_succeeds_with_confirm_conflict(client):
+    payload = {
+        "name": "Duplicate beauty rule, confirmed",
+        "priority": 50,
+        "condition": {"field": "purchase_tags", "operator": "any_in", "value": ["beauty"]},
+        "recommend": {"tags": ["beauty"], "score": 1.0},
+        "confirm_conflict": True,
+    }
+    resp = client.post("/rules", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Duplicate beauty rule, confirmed"
+
+
+def test_update_rule_does_not_block_against_itself(client):
+    """Editing a rule (e.g. just its priority) must not be blocked by RAG
+    retrieving the rule's own prior version as a 'conflict'."""
+    rules = client.get("/rules").json()
+    beauty = next(r for r in rules if r["id"] == "rule-beauty")
+    payload = {
+        "name": beauty["name"],
+        "priority": 71,
+        "condition": beauty["condition"],
+        "recommend": beauty["recommend"],
+    }
+    resp = client.put(f"/rules/{beauty['id']}", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["priority"] == 71
+
+
 def test_reorder_rules_via_api(client):
     ids = [r["id"] for r in client.get("/rules").json()]
     shuffled = ids[::-1]
@@ -79,6 +126,41 @@ def test_rule_from_text_endpoint(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["rule"]["condition"]
+
+
+def test_rule_from_text_rejects_unsupported_text_instead_of_guessing(client):
+    """Rubbish text (or a request depending on an unsupported signal, e.g.
+    location) must not silently fabricate a plausible-looking rule."""
+    resp = client.post("/rules/from-text", json={"text": "asdkj qwoie zzz not a real request"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rule"] is None
+    assert "supported" in body["notes"].lower()
+
+
+def test_draft_with_review_flags_conflict_with_similar_existing_rule(client):
+    """A draft textually close to the seeded rule-beauty should retrieve it via
+    RAG and get flagged by the offline conflict-check heuristic."""
+    resp = client.post("/rules/draft-with-review", json={"text": "recommend skincare to beauty shoppers"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rule"] is not None
+    assert body["conflict_check"] is not None
+    assert body["conflict_check"]["verdict"] == "overlap"
+    assert any(c["rule_id"] == "rule-beauty" for c in body["conflict_check"]["candidates"])
+    agents = [s["agent"] for s in body["steps"]]
+    assert agents == ["Interpreter", "Retriever", "Conflict-checker", "Validator", "Previewer"]
+    assert body["preview"] is not None
+
+
+def test_draft_with_review_unsupported_text_stops_after_interpreter(client):
+    resp = client.post("/rules/draft-with-review", json={"text": "asdkj qwoie zzz not a real request"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rule"] is None
+    assert body["conflict_check"] is None
+    assert [s["agent"] for s in body["steps"]] == ["Interpreter"]
+    assert body["steps"][0]["status"] == "unsupported"
 
 
 def test_rule_preview_no_match_suggests_product(client):

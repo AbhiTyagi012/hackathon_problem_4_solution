@@ -6,9 +6,10 @@ import pytest
 from app.catalog.repository import ProductRepository
 from app.core.config import get_settings
 from app.embeddings.index import ProductVectorIndex
+from app.embeddings.rule_index import RuleVectorIndex
 from app.embeddings.service import GeminiEmbeddingService
 from app.history.repository import FilePurchaseHistoryRepository
-from app.llm.service import GrokLLMService
+from app.llm.service import GroqLLMService
 from app.rules.repository import FileRuleRepository
 from app.services.audit_store import InMemoryAuditStore
 from app.services.recommendation_service import RecommendationService
@@ -51,8 +52,8 @@ def purchase_history_repo(tmp_path):
 @pytest.fixture
 def llm_service():
     settings = get_settings()
-    settings.xai_api_key = ""  # force deterministic fallback path in tests
-    return GrokLLMService(settings)
+    settings.groq_api_key = ""  # force deterministic fallback path in tests
+    return GroqLLMService(settings)
 
 
 @pytest.fixture
@@ -64,7 +65,15 @@ def embedding_service():
 
 @pytest.fixture
 def vector_index(embedding_service, product_repo):
-    return ProductVectorIndex(embedding_service, product_repo)
+    # storage_dir=None: in-memory only, keeps tests isolated/fast. Persistence
+    # has its own dedicated test that constructs a ProductVectorIndex directly
+    # with a tmp_path storage dir.
+    return ProductVectorIndex(embedding_service, product_repo, storage_dir=None)
+
+
+@pytest.fixture
+def rule_vector_index(embedding_service, rule_repo):
+    return RuleVectorIndex(embedding_service, rule_repo)
 
 
 @pytest.fixture
@@ -79,5 +88,7 @@ def recommendation_service(rule_repo, product_repo, purchase_history_repo, vecto
 
 
 @pytest.fixture
-def rule_admin_service(rule_repo, product_repo, llm_service):
-    return RuleAdminService(rule_repo=rule_repo, product_repo=product_repo, llm_service=llm_service)
+def rule_admin_service(rule_repo, product_repo, llm_service, rule_vector_index):
+    return RuleAdminService(
+        rule_repo=rule_repo, product_repo=product_repo, llm_service=llm_service, rule_vector_index=rule_vector_index
+    )

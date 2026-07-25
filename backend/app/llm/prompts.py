@@ -1,21 +1,13 @@
-"""Prompt builders for the Grok-backed LLM features."""
+"""Prompt builders for the Groq-backed LLM features."""
 from __future__ import annotations
 
 import json
 
 CONTEXT_FIELDS = [
-    "age (int)",
-    "gender (string)",
     "purchase_tags (list of strings, e.g. gaming, music, fitness, beauty, travel — derived "
     "server-side from what the shopper has actually bought, not self-reported)",
     "budget_band (string: low|medium|high)",
     "max_budget (number)",
-    "location (string)",
-    "context_type (string: home|search|purchase)",
-    "search_query (string)",
-    "search_category (string)",
-    "purchased_category (string)",
-    "purchased_tags (list of strings)",
 ]
 
 
@@ -33,12 +25,14 @@ def nl_to_rule_prompt(text: str, operators: list[str], categories: list[str], ta
             "products": ["optional product ids"],
             "categories": ["optional category names"],
             "tags": ["optional tag names"],
-            "score": 2.0,
+            "score": 1.0,
         },
     }
+    unsupported_schema = {"unsupported": True, "reason": "one short sentence"}
     return (
         "You convert a plain-English e-commerce recommendation rule into strict JSON.\n"
-        f"Available context fields: {', '.join(CONTEXT_FIELDS)}.\n"
+        f"Available context fields (this is the FULL supported scope for now — nothing else): "
+        f"{', '.join(CONTEXT_FIELDS)}.\n"
         f"Available operators: {', '.join(operators)}.\n"
         f"Available product categories: {', '.join(categories)}.\n"
         f"Available product tags: {', '.join(tags)}.\n\n"
@@ -46,9 +40,41 @@ def nl_to_rule_prompt(text: str, operators: list[str], categories: list[str], ta
         "{all:[...]} / {any:[...]} / {not:{...}}.\n"
         "The 'recommend' block must reference real categories/tags (or product ids) so it "
         "actually matches catalog products. Prefer tags/categories over specific product ids.\n\n"
-        f"Return ONLY a JSON object shaped like:\n{json.dumps(schema, indent=2)}\n\n"
+        "If the request needs a signal that is NOT one of the available context fields above "
+        "(e.g. age, gender, location, or anything else outside that list) — do not substitute an "
+        f"unrelated field or guess. Instead return ONLY: {json.dumps(unsupported_schema)}\n\n"
+        f"Otherwise return ONLY a JSON object shaped like:\n{json.dumps(schema, indent=2)}\n\n"
         f"Rule description: \"{text}\"\n"
         "JSON:"
+    )
+
+
+def check_rule_conflicts_prompt(draft_json: str, candidates_json: str) -> str:
+    return (
+        "You are checking whether a NEW draft recommendation rule conflicts with a small set of "
+        "EXISTING rules that were retrieved because they are similar to it (not the whole ruleset "
+        "— just these retrieved candidates).\n"
+        f"Draft rule: {draft_json}\n"
+        f"Retrieved similar existing rules: {candidates_json}\n\n"
+        "Decide: does the draft exactly duplicate one of these (same condition AND same recommend "
+        "targets), overlap with one (same condition field with an overlapping value, but different "
+        "recommend targets or priority), or is it genuinely distinct (\"ok\")?\n"
+        'Return ONLY JSON: {"verdict": "ok" | "overlap" | "duplicate", '
+        '"candidates": [{"rule_id": "...", "note": "one short sentence"}], "notes": "one short '
+        'sentence"}. Only include a candidate in "candidates" if it actually conflicts — omit ones '
+        "that are merely topically similar but don't actually overlap."
+    )
+
+
+def repair_rule_prompt(draft_json: str, error: str, operators: list[str]) -> str:
+    return (
+        "The following draft recommendation rule JSON failed schema validation.\n"
+        f"Draft: {draft_json}\n"
+        f"Validation error: {error}\n"
+        f"Available operators: {', '.join(operators)}\n\n"
+        "Fix ONLY what's necessary to make it valid — keep the rest unchanged (same intent, same "
+        "recommend targets where possible). Return ONLY the corrected JSON object, same shape as "
+        "the draft."
     )
 
 

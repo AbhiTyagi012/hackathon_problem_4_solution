@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../api/client";
-import type { Rule, RuleCreate, RulePreviewResponse } from "../../api/types";
+import { api, ApiError } from "../../api/client";
+import type { ConflictCheckResult, PipelineStep, Rule, RuleCreate, RulePreviewResponse } from "../../api/types";
 import { ConditionTree } from "../../components/ConditionTree";
 import { Modal } from "../../components/Modal";
 import { RuleForm, type RuleFormInitial } from "../../components/RuleForm";
@@ -20,6 +20,8 @@ export function RulesAdminPage() {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [nlDraft, setNlDraft] = useState<RuleFormInitial | null>(null);
   const [draftPreview, setDraftPreview] = useState<RulePreviewResponse | null>(null);
+  const [conflictCheck, setConflictCheck] = useState<ConflictCheckResult | null>(null);
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([]);
 
   const [nlText, setNlText] = useState("");
   const [nlLoading, setNlLoading] = useState(false);
@@ -66,20 +68,28 @@ export function RulesAdminPage() {
     setNlLoading(true);
     setError("");
     setDraftPreview(null);
+    setConflictCheck(null);
+    setPipelineSteps([]);
     logger.info("generating rule draft from text", { text: nlText });
     try {
-      const res = await api.ruleFromText(nlText);
+      // One call runs the whole pipeline: Interpret -> Retrieve (RAG over existing rules) ->
+      // Conflict-check -> Validate/repair -> Preview. `steps` makes each stage inspectable
+      // instead of the admin only seeing a single opaque "here's a rule" result.
+      const res = await api.draftRuleWithReview(nlText);
+      setPipelineSteps(res.steps);
+      if (!res.rule) {
+        // Outside the currently supported scope (e.g. rubbish text, or a signal like
+        // location/age that isn't wired up yet) — say so explicitly rather than opening
+        // the form with a fabricated rule.
+        pushToast("error", res.notes);
+        return;
+      }
       setNlDraft(res.rule);
       setNlNote(`${res.notes} (source: ${res.source})`);
+      setDraftPreview(res.preview ?? null);
+      setConflictCheck(res.conflict_check ?? null);
       setEditingRule(null);
       setShowForm(true);
-      // Fuse drafting + preview into one step: show the match count before the
-      // admin ever commits, instead of generate -> save -> preview-after-the-fact.
-      try {
-        setDraftPreview(await api.previewDraftRule(res.rule));
-      } catch (previewErr) {
-        logger.error("draft preview failed", previewErr);
-      }
     } catch (e) {
       logger.error("rule generation failed", e);
       setError((e as Error).message);
@@ -101,12 +111,30 @@ export function RulesAdminPage() {
       setEditingRule(null);
       setNlDraft(null);
       setDraftPreview(null);
+      setConflictCheck(null);
+      setPipelineSteps([]);
       setNlText("");
       loadRules();
       const fb = await api.previewRule(saved.id);
       setSaveFeedback(fb);
       openPreview(saved.id);
     } catch (e) {
+      // The save path itself runs the RAG conflict-check (not just the optional NL-preview
+      // pipeline), so this applies to every rule save regardless of how it was authored.
+      // 409 = the rule may duplicate/overlap an existing one; ask for an explicit
+      // confirmation rather than either silently blocking or silently allowing it through.
+      if (e instanceof ApiError && e.status === 409 && e.detail) {
+        const conflict = e.detail as ConflictCheckResult;
+        const candidateLines = conflict.candidates.map((c) => `• ${c.rule_name} — ${c.note}`).join("\n");
+        const confirmed = window.confirm(
+          `This rule may ${conflict.verdict} with an existing rule:\n\n${candidateLines}\n\n` +
+            `${conflict.notes}\n\nSave anyway?`
+        );
+        if (confirmed) {
+          await handleSave({ ...payload, confirm_conflict: true });
+        }
+        return;
+      }
       logger.error(`rule ${isEdit ? "update" : "creation"} failed`, e);
       setError((e as Error).message);
       pushToast("error", `Failed to ${isEdit ? "update" : "add"} rule: ${(e as Error).message}`);
@@ -176,6 +204,8 @@ export function RulesAdminPage() {
                 setEditingRule(null);
                 setNlDraft(null);
                 setDraftPreview(null);
+                setConflictCheck(null);
+                setPipelineSteps([]);
               }}
               style={primaryButton}
             >
@@ -264,6 +294,8 @@ export function RulesAdminPage() {
                         setEditingRule(rule);
                         setNlDraft(null);
                         setDraftPreview(null);
+                        setConflictCheck(null);
+                        setPipelineSteps([]);
                         setShowForm(true);
                       }}
                     >
@@ -287,9 +319,50 @@ export function RulesAdminPage() {
               setEditingRule(null);
               setNlDraft(null);
               setDraftPreview(null);
+              setConflictCheck(null);
+              setPipelineSteps([]);
             }}
           >
             {nlNote && !editingRule && <p style={{ fontSize: 12, color: "var(--fg-muted)" }}>{nlNote}</p>}
+            {pipelineSteps.length > 0 && !editingRule && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, fontSize: 12 }}>
+                {pipelineSteps.map((step, i) => (
+                  <span
+                    key={i}
+                    title={step.detail}
+                    style={{
+                      ...chip,
+                      color:
+                        step.status === "failed"
+                          ? "#dc2626"
+                          : step.status === "unsupported"
+                          ? "#f59e0b"
+                          : step.status === "repaired"
+                          ? "#2563eb"
+                          : "#16a34a",
+                    }}
+                  >
+                    {step.status === "ok" ? "✓" : step.status === "repaired" ? "🔧" : "⚠"} {step.agent}
+                  </span>
+                ))}
+              </div>
+            )}
+            {conflictCheck && conflictCheck.verdict !== "ok" && !editingRule && (
+              <div style={{ ...panel, marginBottom: 12, borderColor: "#f59e0b" }}>
+                <strong>⚠ Possible {conflictCheck.verdict} with existing rule(s)</strong>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{conflictCheck.notes}</div>
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 13 }}>
+                  {conflictCheck.candidates.map((c) => (
+                    <li key={c.rule_id}>
+                      <strong>{c.rule_name}</strong> — {c.note}
+                    </li>
+                  ))}
+                </ul>
+                <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6 }}>
+                  This is a warning, not a block — you can still save as-is or adjust the rule below.
+                </div>
+              </div>
+            )}
             {draftPreview && !editingRule && (
               <div
                 style={{
@@ -353,6 +426,13 @@ const panel: React.CSSProperties = {
   borderRadius: 10,
   padding: 16,
   background: "var(--surface)",
+};
+const chip: React.CSSProperties = {
+  border: "1px solid var(--border)",
+  borderRadius: 999,
+  padding: "3px 10px",
+  background: "var(--surface)",
+  whiteSpace: "nowrap",
 };
 const primaryButton: React.CSSProperties = {
   background: "var(--accent)",
