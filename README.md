@@ -58,8 +58,6 @@ flowchart LR
     RAS --> RVEC[Rule Vector Index]
     RVEC --> EMB
     RAS -->|RAG conflict-check + NL authoring| LLM[Groq LLMService]
-    LLM -. no key .-> FALLBACK[Deterministic Fallback]
-    EMB -. no key .-> HASHFALLBACK[Deterministic Hash Vector]
     API -.every log line.-> LOGH[BroadcastLogHandler]
     LOGH -->|SSE| UI
 ```
