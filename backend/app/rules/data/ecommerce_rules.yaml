@@ -3,12 +3,12 @@ rules:
   name: Fitness fan -> gear
   description: Sports/fitness interests get fitness gear.
   enabled: true
-  priority: 75
+  priority: 100
   condition:
     all: null
     any: null
     not_: null
-    field: interests
+    field: purchase_tags
     operator: any_in
     value:
     - fitness
@@ -21,45 +21,176 @@ rules:
     tags:
     - fitness
     score: 2.0
+  version: 3
+  updated_at: '2026-07-24T23:33:54.585503Z'
+- id: sale-for-makeup-product-c68d59
+  name: sale for makeup product
+  description: 'Auto-generated from: sale for makeup product'
+  enabled: true
+  priority: 90
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - makeup
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - makeup
+    score: 2.0
   version: 1
-  updated_at: '2026-07-24T08:58:09.174316Z'
-- id: suggest-headphones-to-a-person-who-is-bu-4815d7
-  name: suggest headphones to a person who is bu…
-  description: 'Auto-generated from: suggest headphones to a person who is buying
-    a gaming laptop'
+  updated_at: '2026-07-24T11:26:52.225996Z'
+- id: smartphone-b83e76
+  name: smartphone
+  description: 'Auto-generated from: smartphone'
+  enabled: true
+  priority: 80
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - art
+    - phone
+    - smart
+    - smartphone
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - art
+    - phone
+    - smart
+    - smartphone
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T11:26:52.226008Z'
+- id: if-user-buys-shoes-then-suggest-books-1ab3a0
+  name: if user buys shoes then suggest books
+  description: 'Auto-generated from: if user buys shoes then suggest books'
   enabled: true
   priority: 75
   condition:
     all: null
     any: null
     not_: null
-    field: interests
+    field: purchase_tags
     operator: any_in
     value:
-    - gaming
+    - books
   recommend:
     products: []
     categories:
-    - gaming
-    - phones
+    - books
     tags:
-    - gaming
-    - headphones
-    - laptop
-    - phone
+    - books
     score: 2.0
   version: 1
-  updated_at: '2026-07-24T10:14:25.616880Z'
-- id: rule-beauty
-  name: Beauty interest -> skincare
-  description: Beauty interests get skincare and makeup.
+  updated_at: '2026-07-24T16:30:25.625645Z'
+- id: if-user-buys-laptop-suggest-keyboard-95f0b9
+  name: if user buys laptop suggest keyboard
+  description: 'Auto-generated from: if user buys laptop suggest keyboard'
   enabled: true
-  priority: 65
+  priority: 75
   condition:
     all: null
     any: null
     not_: null
-    field: interests
+    field: purchase_tags
+    operator: any_in
+    value:
+    - keyboard
+    - laptop
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - keyboard
+    - laptop
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-24T23:58:31.000764Z'
+- id: makeup-sale-e2d88f
+  name: makeup sale
+  description: 'Auto-generated from: makeup sale'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - makeup
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - makeup
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T00:52:41.540423Z'
+- id: if-user-buys-laptop-suggest-keyboard-04de7b
+  name: if user buys laptop suggest keyboard
+  description: 'Auto-generated from: if user buys laptop suggest keyboard'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - keyboard
+    - laptop
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - keyboard
+    - laptop
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T00:53:52.655465Z'
+- id: sale-for-makeup-4415d7
+  name: sale for makeup
+  description: 'Auto-generated from: sale for makeup'
+  enabled: true
+  priority: 75
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - makeup
+  recommend:
+    products: []
+    categories: []
+    tags:
+    - makeup
+    score: 1.0
+  version: 1
+  updated_at: '2026-07-25T01:00:03.019975Z'
+- id: rule-beauty
+  name: Beauty interest -> skincare
+  description: Beauty interests get skincare and makeup.
+  enabled: true
+  priority: 70
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
     operator: any_in
     value:
     - beauty
@@ -71,17 +202,17 @@ rules:
     - beauty
     score: 2.0
   version: 1
-  updated_at: '2026-07-24T08:58:09.174322Z'
+  updated_at: '2026-07-24T11:26:52.226013Z'
 - id: rule-travel
   name: Traveler -> travel essentials
   description: Travel interests get travel gear.
   enabled: true
-  priority: 65
+  priority: 60
   condition:
     all: null
     any: null
     not_: null
-    field: interests
+    field: purchase_tags
     operator: any_in
     value:
     - travel
@@ -92,23 +223,100 @@ rules:
     - travel
     score: 2.0
   version: 1
-  updated_at: '2026-07-24T08:58:09.174325Z'
-- id: new-rule-41f971
-  name: new rule
-  description: 'shoes '
+  updated_at: '2026-07-24T11:26:52.226015Z'
+- id: rule-audio
+  name: Audio interest -> audio gear
+  description: Audio interests get headphones/speakers.
   enabled: true
-  priority: 50
+  priority: 40
   condition:
     all: null
     any: null
     not_: null
-    field: ''
-    operator: eq
-    value: ''
+    field: purchase_tags
+    operator: any_in
+    value:
+    - audio
+  recommend:
+    products: []
+    categories:
+    - audio
+    tags:
+    - audio
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T11:26:52.226021Z'
+- id: rule-reading
+  name: Reading interest -> books
+  description: Reading/books interests get books.
+  enabled: true
+  priority: 30
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - reading
+    - books
+  recommend:
+    products: []
+    categories:
+    - books
+    tags:
+    - reading
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T11:26:52.226023Z'
+- id: rule-cooking
+  name: Cooking interest -> kitchen gear
+  description: Cooking interests get kitchen gear.
+  enabled: true
+  priority: 20
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: purchase_tags
+    operator: any_in
+    value:
+    - cooking
+  recommend:
+    products: []
+    categories:
+    - kitchen
+    tags:
+    - cooking
+    score: 2.0
+  version: 1
+  updated_at: '2026-07-24T11:26:52.226026Z'
+- id: rule-catch-all-trending
+  name: No purchase history yet -> trending picks
+  description: Guarantees the Recommendation rail is never empty for a shopper with
+    no purchase history (purchase_tags == []). Does not depend on purchase_tags at
+    all, so it fires regardless of signal — it's the deterministic safety net that
+    sits alongside the AI-driven cold-start/purchase-history rails.
+  enabled: true
+  priority: 5
+  condition:
+    all: null
+    any: null
+    not_: null
+    field: context_type
+    operator: in
+    value:
+    - home
+    - search
+    - purchase
+    - evaluate
+    - bulk
   recommend:
     products: []
     categories: []
-    tags: []
-    score: 2.0
+    tags:
+    - gaming
+    - electronics
+    score: 1.0
   version: 1
-  updated_at: '2026-07-24T09:18:17.289240Z'
+  updated_at: '2026-07-24T11:26:52.226028Z'

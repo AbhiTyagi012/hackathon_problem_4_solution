@@ -3,13 +3,14 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       - CORS_ORIGINS=http://localhost:3000
-      - XAI_API_KEY=${XAI_API_KEY:-}
-      - GROK_MODEL=${GROK_MODEL:-grok-4}
-      - GROK_BASE_URL=${GROK_BASE_URL:-https://api.x.ai/v1}
     volumes:
       - ./backend/app/rules/data:/app/app/rules/data
+      - ./backend/app/history/data:/app/app/history/data
 
   frontend:
     build:

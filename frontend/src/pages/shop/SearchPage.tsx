@@ -1,34 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { Decision, Product } from "../../api/types";
 import { useProfile } from "../../context/ProfileContext";
 import { ProductCard } from "../../components/ProductCard";
 import { DecisionBanner } from "../../components/DecisionBanner";
-import { Link } from "react-router-dom";
+import { CategoryCatalog } from "../../components/CategoryCatalog";
+import { CatalogProductCard } from "../../components/CatalogProductCard";
+import { ProductRail } from "../../components/ProductCarousel";
 import { logger } from "../../lib/logger";
 
 export function SearchPage() {
-  const { profile } = useProfile();
+  const { profile, shopperId } = useProfile();
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Product[]>([]);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    api.listProducts().then(setAllProducts).catch((e) => logger.error("failed to load products", e));
+  }, []);
 
   const runSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
     setLoading(true);
     setError("");
+    setSearched(true);
     logger.info("search requested", { query });
     try {
-      const [allProducts, rec] = await Promise.all([
+      const [products, rec] = await Promise.all([
         api.listProducts(),
-        api.recommendSearch(profile, query),
+        api.recommendSearch(profile, shopperId, query),
       ]);
       const lowered = query.toLowerCase();
       setMatches(
-        allProducts.filter(
+        products.filter(
           (p) =>
             p.name.toLowerCase().includes(lowered) ||
             p.category.toLowerCase().includes(lowered) ||
@@ -44,62 +53,64 @@ export function SearchPage() {
     }
   };
 
+  const hasRecommendations = (decision?.recommendations.length ?? 0) > 0;
+
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 16px" }}>
-      <h2>Search products</h2>
-      <form onSubmit={runSearch} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Try 'laptop', 'gaming', 'audio'…"
-          style={{
-            flex: 1,
-            padding: "10px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-            color: "var(--fg)",
-          }}
-        />
-        <button
-          type="submit"
-          style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 600, cursor: "pointer" }}
-        >
-          Search
-        </button>
-      </form>
+    <div className="shop-page">
+      <section className="shop-section search-hero">
+        <div className="section-heading">
+          <h2>Search products</h2>
+          <p className="section-subtitle">Find items by name, category, or tag</p>
+        </div>
+        <form onSubmit={runSearch} className="search-form">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Try 'laptop', 'gaming', 'audio'…"
+            className="search-input"
+          />
+          <button type="submit" className="btn-primary">
+            Search
+          </button>
+        </form>
+      </section>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {loading && <p>Searching…</p>}
+      {error && <p className="page-error">{error}</p>}
+      {loading && <p className="page-status">Searching…</p>}
 
-      {matches.length > 0 && (
-        <>
-          <h3>Matching products</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
-            {matches.map((p) => (
-              <Link key={p.id} to={`/product/${p.id}`} style={{ textDecoration: "none", color: "var(--fg)" }}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--surface)" }}>
-                  <div style={{ fontWeight: 700 }}>{p.name}</div>
-                  <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{p.category}</div>
-                  <div style={{ fontWeight: 700, marginTop: 6 }}>${p.price.toFixed(2)}</div>
-                </div>
-              </Link>
-            ))}
+      {searched && matches.length > 0 && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h3>Matching products</h3>
+            <span className="category-count">{matches.length} results</span>
           </div>
-        </>
+          <ProductRail>
+            {matches.map((p) => (
+              <CatalogProductCard key={p.id} product={p} />
+            ))}
+          </ProductRail>
+        </section>
       )}
 
-      {decision && decision.recommendations.length > 0 && (
-        <>
-          <h3 style={{ marginTop: 28 }}>Recommended for you</h3>
+      {searched && !loading && matches.length === 0 && (
+        <p className="page-status">No products matched your search.</p>
+      )}
+
+      {hasRecommendations && decision && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h3>Recommended for you</h3>
+          </div>
           <DecisionBanner decision={decision} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
+          <ProductRail>
             {decision.recommendations.map((item) => (
               <ProductCard key={item.product.id} item={item} />
             ))}
-          </div>
-        </>
+          </ProductRail>
+        </section>
       )}
+
+      <CategoryCatalog products={allProducts} />
     </div>
   );
 }

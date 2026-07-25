@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../api/client";
-import type { Rule, RuleCreate, RulePreviewResponse } from "../../api/types";
+import { api, ApiError } from "../../api/client";
+import type { ConflictCheckResult, PipelineStep, Rule, RuleCreate, RulePreviewResponse } from "../../api/types";
 import { ConditionTree } from "../../components/ConditionTree";
 import { Modal } from "../../components/Modal";
 import { RuleForm, type RuleFormInitial } from "../../components/RuleForm";
@@ -19,6 +19,9 @@ export function RulesAdminPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [nlDraft, setNlDraft] = useState<RuleFormInitial | null>(null);
+  const [draftPreview, setDraftPreview] = useState<RulePreviewResponse | null>(null);
+  const [conflictCheck, setConflictCheck] = useState<ConflictCheckResult | null>(null);
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([]);
 
   const [nlText, setNlText] = useState("");
   const [nlLoading, setNlLoading] = useState(false);
@@ -64,13 +67,34 @@ export function RulesAdminPage() {
     if (!nlText.trim()) return;
     setNlLoading(true);
     setError("");
+    setDraftPreview(null);
+    setConflictCheck(null);
+    setPipelineSteps([]);
     logger.info("generating rule draft from text", { text: nlText });
     try {
-      const res = await api.ruleFromText(nlText);
+      // One call runs the whole pipeline: Interpret -> Retrieve (RAG over existing rules) ->
+      // Conflict-check -> Validate/repair -> Preview. `steps` makes each stage inspectable
+      // instead of the admin only seeing a single opaque "here's a rule" result.
+      const res = await api.draftRuleWithReview(nlText);
+      setPipelineSteps(res.steps);
+      if (!res.rule) {
+        // Outside the currently supported scope (e.g. rubbish text, or a signal like
+        // location/age that isn't wired up yet) — say so explicitly rather than opening
+        // the form with a fabricated rule.
+        pushToast("error", res.notes);
+        return;
+      }
       setNlDraft(res.rule);
       setNlNote(`${res.notes} (source: ${res.source})`);
+      setDraftPreview(res.preview ?? null);
+      setConflictCheck(res.conflict_check ?? null);
       setEditingRule(null);
       setShowForm(true);
+      try {
+        setDraftPreview(await api.previewDraftRule(res.rule));
+      } catch (previewErr) {
+        logger.error("draft preview failed", previewErr);
+      }
     } catch (e) {
       logger.error("rule generation failed", e);
       setError((e as Error).message);
@@ -91,12 +115,31 @@ export function RulesAdminPage() {
       setShowForm(false);
       setEditingRule(null);
       setNlDraft(null);
+      setDraftPreview(null);
+      setConflictCheck(null);
+      setPipelineSteps([]);
       setNlText("");
       loadRules();
       const fb = await api.previewRule(saved.id);
       setSaveFeedback(fb);
       openPreview(saved.id);
     } catch (e) {
+      // The save path itself runs the RAG conflict-check (not just the optional NL-preview
+      // pipeline), so this applies to every rule save regardless of how it was authored.
+      // 409 = the rule may duplicate/overlap an existing one; ask for an explicit
+      // confirmation rather than either silently blocking or silently allowing it through.
+      if (e instanceof ApiError && e.status === 409 && e.detail) {
+        const conflict = e.detail as ConflictCheckResult;
+        const candidateLines = conflict.candidates.map((c) => `• ${c.rule_name} — ${c.note}`).join("\n");
+        const confirmed = window.confirm(
+          `This rule may ${conflict.verdict} with an existing rule:\n\n${candidateLines}\n\n` +
+            `${conflict.notes}\n\nSave anyway?`
+        );
+        if (confirmed) {
+          await handleSave({ ...payload, confirm_conflict: true });
+        }
+        return;
+      }
       logger.error(`rule ${isEdit ? "update" : "creation"} failed`, e);
       setError((e as Error).message);
       pushToast("error", `Failed to ${isEdit ? "update" : "add"} rule: ${(e as Error).message}`);
@@ -151,120 +194,142 @@ export function RulesAdminPage() {
     }
   };
 
+  const enabledCount = rules.filter((r) => r.enabled).length;
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px", display: "flex", gap: 24 }}>
-      <div style={{ flex: 2, minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Rule Administration</h2>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={runReview} disabled={reviewLoading} style={secondaryButton}>
-              {reviewLoading ? "Reviewing…" : "🔍 Review ruleset (AI)"}
+    <div className="admin-page">
+      <div className="admin-main">
+        <div className="admin-header">
+          <div>
+            <h2>Rule Administration</h2>
+            <p className="section-subtitle">Configure recommendation logic without code changes</p>
+          </div>
+          <div className="admin-actions">
+            <button onClick={runReview} disabled={reviewLoading} className="btn-secondary">
+              {reviewLoading ? "Reviewing…" : "Review ruleset (AI)"}
             </button>
             <button
               onClick={() => {
                 setShowForm(true);
                 setEditingRule(null);
                 setNlDraft(null);
+                setDraftPreview(null);
+                setConflictCheck(null);
+                setPipelineSteps([]);
               }}
-              style={primaryButton}
+              className="btn-primary"
             >
               + New rule
             </button>
           </div>
         </div>
 
-        <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16, background: "var(--surface)" }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>✨ Describe a rule in plain English</div>
-          <div style={{ display: "flex", gap: 8 }}>
+        <div className="admin-stat-row">
+          <div className="admin-stat">
+            <div className="admin-stat-value">{rules.length}</div>
+            <div className="admin-stat-label">Total rules</div>
+          </div>
+          <div className="admin-stat">
+            <div className="admin-stat-value">{enabledCount}</div>
+            <div className="admin-stat-label">Enabled</div>
+          </div>
+          <div className="admin-stat">
+            <div className="admin-stat-value">{rules.length - enabledCount}</div>
+            <div className="admin-stat-label">Disabled</div>
+          </div>
+        </div>
+
+        <div className="admin-panel admin-ai-panel">
+          <div className="admin-panel-title">Describe a rule in plain English</div>
+          <div className="admin-ai-row">
             <input
               value={nlText}
               onChange={(e) => setNlText(e.target.value)}
               placeholder="e.g. Recommend gaming accessories to users interested in gaming who search for a laptop, priority high"
-              style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--fg)" }}
+              className="admin-ai-input"
             />
-            <button onClick={generateFromText} disabled={nlLoading} style={primaryButton}>
+            <button onClick={generateFromText} disabled={nlLoading} className="btn-primary">
               {nlLoading ? "Generating…" : "Generate"}
             </button>
           </div>
         </div>
 
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
+        {error && <p className="page-error">{error}</p>}
         {reviewText && (
-          <div style={{ ...panel, whiteSpace: "pre-wrap", marginBottom: 16 }}>
-            <strong>AI ruleset review:</strong>
-            <div>{reviewText}</div>
+          <div className="admin-alert">
+            <strong>AI ruleset review</strong>
+            <div style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{reviewText}</div>
           </div>
         )}
         {saveFeedback && (
-          <div style={{ ...panel, marginBottom: 16, borderColor: saveFeedback.needs_product ? "#f59e0b" : "#16a34a" }}>
-            <strong>{saveFeedback.needs_product ? "⚠ Rule saved — no matching product yet" : "✓ Rule saved"}</strong>
-            <div>{saveFeedback.feedback}</div>
+          <div className={`admin-alert ${saveFeedback.needs_product ? "warning" : "success"}`}>
+            <strong>{saveFeedback.needs_product ? "Rule saved — no matching product yet" : "Rule saved successfully"}</strong>
+            <div style={{ marginTop: 6 }}>{saveFeedback.feedback}</div>
           </div>
         )}
 
         {loading ? (
-          <p>Loading rules…</p>
+          <p className="page-status">Loading rules…</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "2px solid var(--border)" }}>
-                <th style={th}>Priority</th>
-                <th style={th}>Name</th>
-                <th style={th}>Condition</th>
-                <th style={th}>Recommends</th>
-                <th style={th}>v</th>
-                <th style={th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map((rule, idx) => (
-                <tr
-                  key={rule.id}
-                  onClick={() => openPreview(rule.id)}
-                  style={{
-                    borderBottom: "1px solid var(--border)",
-                    cursor: "pointer",
-                    background: selectedId === rule.id ? "var(--bg)" : "transparent",
-                    opacity: rule.enabled ? 1 : 0.5,
-                  }}
-                >
-                  <td style={td}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {rule.priority}
-                      <button style={miniButton} onClick={(e) => { e.stopPropagation(); move(idx, -1); }}>▲</button>
-                      <button style={miniButton} onClick={(e) => { e.stopPropagation(); move(idx, 1); }}>▼</button>
-                    </div>
-                  </td>
-                  <td style={td}>
-                    <div style={{ fontWeight: 600 }}>{rule.name}</div>
-                    <div style={{ color: "var(--fg-muted)" }}>{rule.description}</div>
-                  </td>
-                  <td style={td}>
-                    <ConditionTree condition={rule.condition} />
-                  </td>
-                  <td style={td}>
-                    {[...rule.recommend.categories, ...rule.recommend.tags].join(", ") || "—"} · score {rule.recommend.score}
-                  </td>
-                  <td style={td}>{rule.version}</td>
-                  <td style={td} onClick={(e) => e.stopPropagation()}>
-                    <button
-                      style={miniButton}
-                      onClick={() => {
-                        setEditingRule(rule);
-                        setNlDraft(null);
-                        setShowForm(true);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button style={{ ...miniButton, color: "crimson" }} onClick={() => handleDelete(rule.id)}>
-                      Delete
-                    </button>
-                  </td>
+          <div className="admin-rules-table-wrap">
+            <table className="admin-rules-table">
+              <thead>
+                <tr>
+                  <th>Priority</th>
+                  <th>Name</th>
+                  <th>Condition</th>
+                  <th>Recommends</th>
+                  {/* <th>v</th> */}
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rules.map((rule, idx) => (
+                  <tr
+                    key={rule.id}
+                    onClick={() => openPreview(rule.id)}
+                    className={`${selectedId === rule.id ? "selected" : ""}${rule.enabled ? "" : " disabled"}`}
+                  >
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <strong>{rule.priority}</strong>
+                        <button type="button" className="btn-ghost" onClick={(e) => { e.stopPropagation(); move(idx, -1); }}>▲</button>
+                        <button type="button" className="btn-ghost" onClick={(e) => { e.stopPropagation(); move(idx, 1); }}>▼</button>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 700 }}>{rule.name}</div>
+                      <div style={{ color: "var(--fg-muted)", marginTop: 4 }}>{rule.description}</div>
+                    </td>
+                    <td>
+                      <ConditionTree condition={rule.condition} />
+                    </td>
+                    <td>
+                      {[...rule.recommend.categories, ...rule.recommend.tags].join(", ") || "—"} · score {rule.recommend.score}
+                    </td>
+                    {/* <td>{rule.version}</td> */}
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => {
+                          setEditingRule(rule);
+                          setNlDraft(null);
+                          setDraftPreview(null);
+                          setShowForm(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button type="button" className="btn-ghost btn-danger" onClick={() => handleDelete(rule.id)}>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {showForm && (
@@ -274,9 +339,57 @@ export function RulesAdminPage() {
               setShowForm(false);
               setEditingRule(null);
               setNlDraft(null);
+              setDraftPreview(null);
+              setConflictCheck(null);
+              setPipelineSteps([]);
             }}
           >
             {nlNote && !editingRule && <p style={{ fontSize: 12, color: "var(--fg-muted)" }}>{nlNote}</p>}
+            {pipelineSteps.length > 0 && !editingRule && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, fontSize: 12 }}>
+                {pipelineSteps.map((step, i) => (
+                  <span
+                    key={i}
+                    title={step.detail}
+                    style={{
+                      ...chip,
+                      color:
+                        step.status === "failed"
+                          ? "#dc2626"
+                          : step.status === "unsupported"
+                          ? "#f59e0b"
+                          : step.status === "repaired"
+                          ? "#2563eb"
+                          : "#16a34a",
+                    }}
+                  >
+                    {step.status === "ok" ? "✓" : step.status === "repaired" ? "🔧" : "⚠"} {step.agent}
+                  </span>
+                ))}
+              </div>
+            )}
+            {conflictCheck && conflictCheck.verdict !== "ok" && !editingRule && (
+              <div style={{ ...panel, marginBottom: 12, borderColor: "#f59e0b" }}>
+                <strong>⚠ Possible {conflictCheck.verdict} with existing rule(s)</strong>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{conflictCheck.notes}</div>
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 13 }}>
+                  {conflictCheck.candidates.map((c) => (
+                    <li key={c.rule_id}>
+                      <strong>{c.rule_name}</strong> — {c.note}
+                    </li>
+                  ))}
+                </ul>
+                <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 6 }}>
+                  This is a warning, not a block — you can still save as-is or adjust the rule below.
+                </div>
+              </div>
+            )}
+            {draftPreview && !editingRule && (
+              <div className={`admin-alert ${draftPreview.needs_product ? "warning" : "success"}`} style={{ marginBottom: 12 }}>
+                <strong>{draftPreview.needs_product ? "No matching product yet" : "Live match preview"}</strong>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{draftPreview.feedback}</div>
+              </div>
+            )}
             <RuleForm
               initial={editingRule ?? nlDraft ?? undefined}
               submitLabel={editingRule ? "Save changes" : "Create rule"}
@@ -293,64 +406,48 @@ export function RulesAdminPage() {
 
       <ToastStack toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
 
-      <div style={{ flex: 1, minWidth: 280 }}>
-        <h3>Live preview</h3>
-        {!selectedId && <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>Select a rule to preview what it recommends.</p>}
-        {previewLoading && <p>Loading preview…</p>}
-        {preview && (
-          <div style={panel}>
-            <div style={{ fontSize: 13, marginBottom: 8 }}>
-              Sample match: <strong>{preview.matched ? "✓ matches demo profile" : "✗ no match on demo profile"}</strong>
-            </div>
-            <div style={{ fontSize: 13, marginBottom: 10 }}>{preview.feedback}</div>
-            {preview.matched_products.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {preview.matched_products.map((p) => (
-                  <div key={p.id} style={{ fontSize: 13, borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>
-                    <strong>{p.name}</strong> — ${p.price.toFixed(2)}
-                  </div>
-                ))}
+      <aside className="admin-sidebar">
+        <div className="admin-panel">
+          <div className="admin-panel-title">Live preview</div>
+          {!selectedId && (
+            <p style={{ color: "var(--fg-muted)", fontSize: 13, margin: 0 }}>
+              Select a rule to preview what it recommends against the demo profile.
+            </p>
+          )}
+          {previewLoading && <p className="page-status">Loading preview…</p>}
+          {preview && (
+            <div className="admin-preview-card">
+              <div style={{ fontSize: 13, marginBottom: 8 }}>
+                Sample match: <strong>{preview.matched ? "matches demo profile" : "no match on demo profile"}</strong>
               </div>
-            )}
-          </div>
-        )}
-      </div>
+              <div style={{ fontSize: 13, marginBottom: 10 }}>{preview.feedback}</div>
+              {preview.matched_products.length > 0 && (
+                <div>
+                  {preview.matched_products.map((p) => (
+                    <div key={p.id} className="admin-preview-product">
+                      <strong>{p.name}</strong> — ${p.price.toFixed(2)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
 
-const th: React.CSSProperties = { padding: "8px 6px" };
-const td: React.CSSProperties = { padding: "8px 6px", verticalAlign: "top" };
 const panel: React.CSSProperties = {
   border: "1px solid var(--border)",
   borderRadius: 10,
   padding: 16,
   background: "var(--surface)",
 };
-const primaryButton: React.CSSProperties = {
-  background: "var(--accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: 8,
-  padding: "8px 16px",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-const secondaryButton: React.CSSProperties = {
-  background: "var(--bg)",
+const chip: React.CSSProperties = {
   border: "1px solid var(--border)",
-  borderRadius: 8,
-  padding: "8px 16px",
-  cursor: "pointer",
+  borderRadius: 999,
+  padding: "3px 10px",
+  background: "var(--surface)",
   whiteSpace: "nowrap",
-};
-const miniButton: React.CSSProperties = {
-  background: "var(--bg)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: "2px 8px",
-  cursor: "pointer",
-  fontSize: 12,
-  marginRight: 4,
 };

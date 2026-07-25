@@ -1,95 +1,88 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
-import type { Decision, Product } from "../../api/types";
+import type { Decision, Product, SimilarProduct } from "../../api/types";
 import { useProfile } from "../../context/ProfileContext";
 import { ProductCard } from "../../components/ProductCard";
 import { DecisionBanner } from "../../components/DecisionBanner";
+import { CategoryCatalog } from "../../components/CategoryCatalog";
+import { ProductRail } from "../../components/ProductCarousel";
+import { SimilarProductCard } from "../../components/SimilarProductCard";
 import { logger } from "../../lib/logger";
 
 export function HomePage() {
-  const { profile } = useProfile();
+  const { profile, shopperId } = useProfile();
   const [decision, setDecision] = useState<Decision | null>(null);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [similar, setSimilar] = useState<SimilarProduct[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    logger.info("fetching home recommendations", { interests: profile.interests });
-    Promise.all([api.recommendHome(profile), api.listProducts()])
-      .then(([rec, products]) => {
+    logger.info("fetching home recommendations", { shopperId });
+    Promise.all([
+      api.recommendHome(profile, shopperId),
+      api.listProducts(),
+      api.recommendSimilar(shopperId),
+    ])
+      .then(([rec, products, similarResp]) => {
         setDecision(rec);
         setAllProducts(products);
+        setSimilar(similarResp.items);
       })
       .catch((e) => {
         logger.error("failed to load home page", e);
         setError(e.message);
       })
       .finally(() => setLoading(false));
-  }, [profile]);
+  }, [profile, shopperId]);
 
-  const hasProfile = profile.interests.length > 0 || profile.budget_band || profile.max_budget;
+  const hasProfile = Boolean(profile.budget_band || profile.max_budget || profile.age || profile.location);
   const recommendedIds = new Set(decision?.recommendations.map((r) => r.product.id) ?? []);
-  const otherProducts = allProducts.filter((p) => !recommendedIds.has(p.id));
+  const hasRecommendations = (decision?.recommendations.length ?? 0) > 0;
+  const hasSimilar = similar.length > 0;
 
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 16px" }}>
-      <h2>Recommended for you</h2>
-      {!hasProfile && (
-        <p style={{ color: "var(--fg-muted)" }}>
-          Tip: set up your <Link to="/profile">profile</Link> for more targeted recommendations. Showing
-          a cold-start view for now.
-        </p>
-      )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {loading && <p>Loading…</p>}
-      {decision && (
-        <>
+    <div className="shop-page">
+      {loading && <p className="page-status">Loading your personalized storefront…</p>}
+      {error && <p className="page-error">{error}</p>}
+
+      {!loading && hasRecommendations && decision && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h2>Recommended for you</h2>
+            {!hasProfile && (
+              <p className="section-subtitle">
+                Tip: set up your <Link to="/profile">profile</Link> for more targeted recommendations.
+              </p>
+            )}
+          </div>
           <DecisionBanner decision={decision} />
-          {decision.recommendations.length > 0 ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 16,
-                marginTop: 16,
-              }}
-            >
-              {decision.recommendations.map((item) => (
-                <ProductCard key={item.product.id} item={item} />
-              ))}
-            </div>
-          ) : (
-            <p style={{ color: "var(--fg-muted)", marginTop: 12 }}>
-              No rules matched your profile yet — browse all products below.
-            </p>
-          )}
-        </>
+          <ProductRail>
+            {decision.recommendations.map((item) => (
+              <ProductCard key={item.product.id} item={item} />
+            ))}
+          </ProductRail>
+        </section>
       )}
 
-      {!loading && otherProducts.length > 0 && (
-        <>
-          <h2 style={{ marginTop: 36 }}>All products</h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              gap: 16,
-              marginTop: 16,
-            }}
-          >
-            {otherProducts.map((product) => (
-              <Link key={product.id} to={`/product/${product.id}`} style={{ textDecoration: "none", color: "var(--fg)" }}>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--surface)" }}>
-                  <div style={{ fontWeight: 700 }}>{product.name}</div>
-                  <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{product.category} · {product.brand}</div>
-                  <div style={{ fontWeight: 700, marginTop: 6 }}>${product.price.toFixed(2)}</div>
-                </div>
-              </Link>
-            ))}
+      {!loading && hasSimilar && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h2>Based on your purchase history</h2>
+            <p className="section-subtitle">Similar picks powered by embeddings, not rules</p>
           </div>
-        </>
+          <ProductRail>
+            {similar.map((item) => (
+              <SimilarProductCard key={item.product.id} item={item} />
+            ))}
+          </ProductRail>
+        </section>
+      )}
+
+      {!loading && (
+        <CategoryCatalog products={allProducts} excludeIds={recommendedIds} />
       )}
     </div>
   );

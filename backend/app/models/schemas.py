@@ -86,6 +86,7 @@ class RuleCreate(BaseModel):
     priority: int = 100
     condition: Condition
     recommend: RecommendAction = Field(default_factory=RecommendAction)
+    confirm_conflict: bool = False  # bypass the RAG conflict-check block; set after an explicit admin confirmation
 
 
 class RuleReorder(BaseModel):
@@ -109,11 +110,9 @@ class Product(BaseModel):
 class Profile(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
-    interests: list[str] = Field(default_factory=list)
     budget_band: Optional[str] = None  # low | medium | high
     max_budget: Optional[float] = None
     location: Optional[str] = None
-    past_purchase_categories: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -159,21 +158,45 @@ class EvaluationRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 class HomeRequest(BaseModel):
     profile: Profile
+    shopper_id: str
 
 
 class SearchRequest(BaseModel):
     profile: Profile
+    shopper_id: str
     search_query: str = ""
     search_category: Optional[str] = None
 
 
 class PurchaseRequest(BaseModel):
     profile: Profile
+    shopper_id: str
     purchased_product_id: str
 
 
 class BulkRequest(BaseModel):
     profiles: list[Profile]
+
+
+class SimilarRequest(BaseModel):
+    shopper_id: str
+
+
+# --------------------------------------------------------------------------- #
+# Purchase-history similarity (embeddings) — a distinct mechanism from the
+# rule engine, so it gets its own response shape rather than reusing Decision:
+# there is no rule trace to report here, only a similarity score.
+# --------------------------------------------------------------------------- #
+class SimilarProduct(BaseModel):
+    product: Product
+    score: float
+    similar_to_product_id: str
+    reason: str = ""
+
+
+class SimilarProductsResponse(BaseModel):
+    items: list[SimilarProduct] = Field(default_factory=list)
+    source: str = "gemini"  # "gemini" | "fallback"
 
 
 # --------------------------------------------------------------------------- #
@@ -184,8 +207,8 @@ class NlRuleRequest(BaseModel):
 
 
 class NlRuleResponse(BaseModel):
-    rule: RuleCreate
-    source: str = "grok"  # "grok" | "fallback"
+    rule: Optional[RuleCreate] = None  # None when the request is outside the supported scope
+    source: str = "groq"  # "groq" | "fallback"
     notes: str = ""
 
 
@@ -204,4 +227,39 @@ class RulePreviewResponse(BaseModel):
 
 class RuleReviewResponse(BaseModel):
     review: str
-    source: str = "grok"
+    source: str = "groq"
+
+
+# --------------------------------------------------------------------------- #
+# Rule authoring pipeline: Interpret -> Retrieve -> Conflict-check -> Validate
+# -> Preview. Each step is inspectable via `PipelineStep`, and conflict-check
+# is RAG (retrieval over the ruleset via RuleVectorIndex), not a whole-ruleset
+# dump like RuleReviewResponse above.
+# --------------------------------------------------------------------------- #
+class RuleConflictCandidate(BaseModel):
+    rule_id: str
+    rule_name: str
+    similarity: float
+    note: str = ""
+
+
+class ConflictCheckResult(BaseModel):
+    verdict: str = "ok"  # "ok" | "overlap" | "duplicate"
+    candidates: list[RuleConflictCandidate] = Field(default_factory=list)
+    notes: str = ""
+    source: str = "groq"  # "groq" | "fallback"
+
+
+class PipelineStep(BaseModel):
+    agent: str
+    status: str  # "ok" | "repaired" | "unsupported" | "failed"
+    detail: str = ""
+
+
+class RuleDraftPipelineResponse(BaseModel):
+    rule: Optional[RuleCreate] = None
+    conflict_check: Optional[ConflictCheckResult] = None
+    preview: Optional[RulePreviewResponse] = None
+    steps: list[PipelineStep] = Field(default_factory=list)
+    source: str = "groq"
+    notes: str = ""

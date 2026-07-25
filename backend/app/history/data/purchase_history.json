@@ -1,0 +1,25 @@
+{
+  "shopper-demo-gamer": {
+    "purchased_product_ids": [
+      "p001",
+      "p004",
+      "p005",
+      "p035"
+    ]
+  },
+  "shopper-demo-beauty": {
+    "purchased_product_ids": [
+      "p017",
+      "p018",
+      "p019"
+    ]
+  },
+  "shopper-demo-new": {
+    "purchased_product_ids": []
+  },
+  "eeef9f6e-6323-4237-822d-2bac7834fe0a": {
+    "purchased_product_ids": [
+      "p001"
+    ]
+  }
+}

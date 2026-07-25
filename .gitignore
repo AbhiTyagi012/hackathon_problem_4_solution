@@ -1,0 +1,10 @@
+.venv
+.env
+
+# Python bytecode cache — derived, platform/version-specific, never worth committing
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Regenerable embedding index cache — rebuilds automatically on first use
+backend/app/embeddings/data/

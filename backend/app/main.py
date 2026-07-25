@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import catalog, evaluate, health, recommend, rules
+from app.api.routes import catalog, evaluate, health, logs, recommend, rules
 from app.core.config import get_settings
 from app.core.exceptions import PlatformError
 from app.core.logging import get_logger, setup_logging
@@ -49,10 +49,10 @@ async def request_logging(request: Request, call_next):
 
 @app.exception_handler(PlatformError)
 async def platform_error_handler(request: Request, exc: PlatformError):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.__class__.__name__, "message": exc.message},
-    )
+    content = {"error": exc.__class__.__name__, "message": exc.message}
+    if exc.detail is not None:
+        content["detail"] = exc.detail
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 app.include_router(health.router)
@@ -60,3 +60,4 @@ app.include_router(rules.router)
 app.include_router(recommend.router)
 app.include_router(evaluate.router)
 app.include_router(catalog.router)
+app.include_router(logs.router)

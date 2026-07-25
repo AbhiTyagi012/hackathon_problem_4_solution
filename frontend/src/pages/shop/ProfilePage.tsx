@@ -2,24 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProfile } from "../../context/ProfileContext";
 
-const INTEREST_OPTIONS = [
-  "gaming", "music", "audio", "fitness", "sports", "beauty", "skincare",
-  "travel", "reading", "books", "cooking", "home",
-];
-
 export function ProfilePage() {
   const { profile, setProfile } = useProfile();
   const navigate = useNavigate();
   const [form, setForm] = useState(profile);
-
-  const toggleInterest = (interest: string) => {
-    setForm((f) => ({
-      ...f,
-      interests: f.interests.includes(interest)
-        ? f.interests.filter((i) => i !== interest)
-        : [...f.interests, interest],
-    }));
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,26 +44,6 @@ export function ProfilePage() {
             <option value="other">Other</option>
           </select>
         </label>
-
-        <div>
-          <div style={{ fontSize: 13, marginBottom: 6 }}>Interests</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {INTEREST_OPTIONS.map((interest) => (
-              <button
-                type="button"
-                key={interest}
-                onClick={() => toggleInterest(interest)}
-                style={{
-                  ...chip,
-                  background: form.interests.includes(interest) ? "var(--accent)" : "var(--surface)",
-                  color: form.interests.includes(interest) ? "#fff" : "var(--fg)",
-                }}
-              >
-                {interest}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <label style={label}>
           Budget band
@@ -127,13 +93,6 @@ const input: React.CSSProperties = {
   border: "1px solid var(--border)",
   background: "var(--surface)",
   color: "var(--fg)",
-};
-const chip: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 999,
-  padding: "6px 14px",
-  cursor: "pointer",
-  fontSize: 13,
 };
 const primaryButton: React.CSSProperties = {
   background: "var(--accent)",

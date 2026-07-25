@@ -34,6 +34,7 @@ export interface RuleCreate {
   priority: number;
   condition: Condition;
   recommend: RecommendAction;
+  confirm_conflict?: boolean; // bypass the RAG conflict-check block after an explicit admin confirmation
 }
 
 export interface Product {
@@ -50,11 +51,9 @@ export interface Product {
 export interface Profile {
   age?: number | null;
   gender?: string | null;
-  interests: string[];
   budget_band?: string | null;
   max_budget?: number | null;
   location?: string | null;
-  past_purchase_categories: string[];
 }
 
 export interface RuleTrace {
@@ -88,7 +87,7 @@ export interface Decision {
 }
 
 export interface NlRuleResponse {
-  rule: RuleCreate;
+  rule?: RuleCreate | null; // null/absent when the request is outside the supported scope
   source: string;
   notes: string;
 }
@@ -105,4 +104,60 @@ export interface RulePreviewResponse {
 export interface RuleReviewResponse {
   review: string;
   source: string;
+}
+
+// Rule authoring pipeline: Interpret -> Retrieve (RAG over existing rules) -> Conflict-check ->
+// Validate/repair -> Preview. Conflict-check warns (verdict), it never blocks saving.
+export interface RuleConflictCandidate {
+  rule_id: string;
+  rule_name: string;
+  similarity: number;
+  note: string;
+}
+
+export interface ConflictCheckResult {
+  verdict: "ok" | "overlap" | "duplicate";
+  candidates: RuleConflictCandidate[];
+  notes: string;
+  source: string;
+}
+
+export interface PipelineStep {
+  agent: string;
+  status: "ok" | "repaired" | "unsupported" | "failed";
+  detail: string;
+}
+
+export interface RuleDraftPipelineResponse {
+  rule?: RuleCreate | null;
+  conflict_check?: ConflictCheckResult | null;
+  preview?: RulePreviewResponse | null;
+  steps: PipelineStep[];
+  source: string;
+  notes: string;
+}
+
+// Purchase-history rail: embeddings + cosine similarity, not rule-based —
+// deliberately a distinct shape from Decision, which has no meaning here
+// (there's no rule trace to report for a similarity match).
+export interface SimilarProduct {
+  product: Product;
+  score: number;
+  similar_to_product_id: string;
+  reason: string;
+}
+
+export interface SimilarProductsResponse {
+  items: SimilarProduct[];
+  source: "gemini" | "fallback";
+}
+
+// Live log viewer (/admin/logs) — tails the same structured log stream every
+// logger.info/warning/error(...) call in the backend already flows into.
+export interface LogEntry {
+  seq: number;
+  timestamp: string;
+  level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  logger: string;
+  message: string;
 }

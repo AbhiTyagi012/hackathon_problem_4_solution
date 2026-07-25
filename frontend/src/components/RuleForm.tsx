@@ -10,8 +10,8 @@ const OPERATORS = [
 ];
 
 const FIELD_SUGGESTIONS = [
-  "age", "gender", "interests", "budget_band", "max_budget", "location",
-  "past_purchase_categories", "context_type", "search_query", "search_category",
+  "age", "gender", "budget_band", "max_budget", "location", "purchase_tags",
+  "context_type", "search_query", "search_category",
   "purchased_category", "purchased_tags",
 ];
 
@@ -69,10 +69,11 @@ export function RuleForm({
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [mode, setMode] = useState<Mode>(initialDraft.mode);
   const [leaves, setLeaves] = useState<LeafDraft[]>(initialDraft.leaves);
-  const [products, setProducts] = useState((initial?.recommend?.products ?? []).join(", "));
-  const [categories, setCategories] = useState((initial?.recommend?.categories ?? []).join(", "));
-  const [tags, setTags] = useState((initial?.recommend?.tags ?? []).join(", "));
-  const [score, setScore] = useState(initial?.recommend?.score ?? 2);
+  // `recommend` (what to show when this rule matches) isn't hand-typed here — it's inferred by NL
+  // authoring from catalog vocabulary in the rule text, or carried over unchanged when editing an
+  // existing rule. `score` is a fixed constant: with `priority` already ordering rules, asking an
+  // admin to also tune a second "how much does this matter" number is redundant.
+  const recommend = initial?.recommend ?? { products: [], categories: [], tags: [], score: 1.0 };
 
   const updateLeaf = (idx: number, patch: Partial<LeafDraft>) =>
     setLeaves((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -86,8 +87,6 @@ export function RuleForm({
     return { any: leaves.map(toLeafCondition) };
   };
 
-  const splitCsv = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload: RuleCreate = {
@@ -96,12 +95,7 @@ export function RuleForm({
       enabled,
       priority: Number(priority),
       condition: buildCondition(),
-      recommend: {
-        products: splitCsv(products),
-        categories: splitCsv(categories),
-        tags: splitCsv(tags),
-        score: Number(score),
-      },
+      recommend,
     };
     onSubmit(payload);
   };
@@ -187,25 +181,12 @@ export function RuleForm({
         )}
       </fieldset>
 
-      <fieldset style={fieldset}>
-        <legend>Recommend</legend>
-        <label style={label}>
-          Product IDs (comma separated)
-          <input value={products} onChange={(e) => setProducts(e.target.value)} style={input} />
-        </label>
-        <label style={label}>
-          Categories (comma separated)
-          <input value={categories} onChange={(e) => setCategories(e.target.value)} style={input} />
-        </label>
-        <label style={label}>
-          Tags (comma separated)
-          <input value={tags} onChange={(e) => setTags(e.target.value)} style={input} />
-        </label>
-        <label style={{ ...label, width: 120 }}>
-          Score
-          <input type="number" step="0.5" value={score} onChange={(e) => setScore(Number(e.target.value))} style={input} />
-        </label>
-      </fieldset>
+      {(recommend.categories.length > 0 || recommend.tags.length > 0 || recommend.products.length > 0) && (
+        <p style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+          Recommends: {[...recommend.categories, ...recommend.tags, ...recommend.products].join(", ")}
+          {" "}— inferred automatically, see the live preview for what it currently matches.
+        </p>
+      )}
 
       <div style={{ display: "flex", gap: 8 }}>
         <button type="submit" style={primaryButton}>

@@ -5,11 +5,13 @@ import type { Decision, Product } from "../../api/types";
 import { useProfile } from "../../context/ProfileContext";
 import { ProductCard } from "../../components/ProductCard";
 import { DecisionBanner } from "../../components/DecisionBanner";
+import { ProductRail } from "../../components/ProductCarousel";
+import { categoryAccent, formatSubcategoryLabel, getBroadCategory } from "../../lib/catalog";
 import { logger } from "../../lib/logger";
 
 export function ProductPage() {
   const { id } = useParams<{ id: string }>();
-  const { profile } = useProfile();
+  const { profile, shopperId } = useProfile();
   const [product, setProduct] = useState<Product | null>(null);
   const [bought, setBought] = useState(false);
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -29,7 +31,7 @@ export function ProductPage() {
     setError("");
     logger.info("purchase requested", { productId: id });
     try {
-      const rec = await api.recommendPurchase(profile, id);
+      const rec = await api.recommendPurchase(profile, shopperId, id);
       setDecision(rec);
       setBought(true);
     } catch (e) {
@@ -40,52 +42,58 @@ export function ProductPage() {
     }
   };
 
-  if (!product) return <div style={{ padding: 24 }}>{error || "Loading…"}</div>;
+  if (!product) return <div className="shop-page">{error || "Loading…"}</div>;
+
+  const accent = categoryAccent(getBroadCategory(product));
+  const hasRecommendations = (decision?.recommendations.length ?? 0) > 0;
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px 16px" }}>
-      <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 24, background: "var(--surface)" }}>
-        <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{product.category} · {product.brand}</div>
-        <h2 style={{ margin: "6px 0" }}>{product.name}</h2>
-        <p style={{ color: "var(--fg-muted)" }}>{product.description}</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-          {product.tags.map((t) => (
-            <span key={t} style={{ fontSize: 12, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 8px" }}>
-              {t}
-            </span>
-          ))}
+    <div className="shop-page">
+      <div className="product-detail">
+        <div className="product-detail-media" style={{ background: `linear-gradient(135deg, ${accent}22, ${accent}55)` }}>
+          <span className="catalog-card-initial">{product.name.charAt(0)}</span>
         </div>
-        <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>${product.price.toFixed(2)}</div>
-        <button
-          onClick={handleBuy}
-          disabled={loading || bought}
-          style={{
-            background: bought ? "#16a34a" : "var(--accent)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 10,
-            padding: "12px 24px",
-            fontWeight: 700,
-            cursor: bought ? "default" : "pointer",
-            fontSize: 15,
-          }}
-        >
-          {bought ? "✓ Purchased" : loading ? "Processing…" : "Buy now"}
-        </button>
+        <div className="product-detail-body">
+          <div className="catalog-card-brand">{product.brand || "ShopSense"}</div>
+          <div className="section-subtitle">{formatSubcategoryLabel(product.category)}</div>
+          <h2>{product.name}</h2>
+          <p style={{ color: "var(--fg-muted)" }}>{product.description}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+            {product.tags.map((t) => (
+              <span key={t} className="tag-chip">
+                {t}
+              </span>
+            ))}
+          </div>
+          <div className="catalog-card-price" style={{ fontSize: "1.6rem", marginBottom: 16 }}>
+            ${product.price.toFixed(2)}
+          </div>
+          <button
+            type="button"
+            onClick={handleBuy}
+            disabled={loading || bought}
+            className="btn-primary"
+            style={{ background: bought ? "#16a34a" : undefined }}
+          >
+            {bought ? "✓ Purchased" : loading ? "Processing…" : "Buy now"}
+          </button>
+        </div>
       </div>
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="page-error">{error}</p>}
 
-      {decision && (
-        <div style={{ marginTop: 28 }}>
-          <h3>Customers who bought this also liked</h3>
+      {hasRecommendations && decision && (
+        <section className="shop-section">
+          <div className="section-heading">
+            <h3>Customers who bought this also liked</h3>
+          </div>
           <DecisionBanner decision={decision} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
+          <ProductRail>
             {decision.recommendations.map((item) => (
               <ProductCard key={item.product.id} item={item} />
             ))}
-          </div>
-        </div>
+          </ProductRail>
+        </section>
       )}
     </div>
   );
