@@ -16,21 +16,22 @@ class Settings(BaseSettings):
     rules_dir: str = str(BASE_DIR / "rules" / "data")
     catalog_path: str = str(BASE_DIR / "catalog" / "data" / "products.json")
     purchase_history_path: str = str(BASE_DIR / "history" / "data" / "purchase_history.json")
+    embeddings_dir: str = str(BASE_DIR / "embeddings" / "data")
 
-    # Grok / xAI LLM configuration
-    xai_api_key: str = ""
-    grok_model: str = "grok-4"
-    grok_base_url: str = "https://api.x.ai/v1"
+    # Groq LLM configuration (OpenAI-compatible chat completions API)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_timeout_seconds: float = 30.0
 
     # Gemini embeddings configuration
     gemini_api_key: str = ""
-    gemini_embedding_model: str = "text-embedding-004"
+    gemini_embedding_model: str = "gemini-embedding-001"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.xai_api_key.strip())
+        return bool(self.groq_api_key.strip())
 
     @property
     def embedding_enabled(self) -> bool:

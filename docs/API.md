@@ -143,16 +143,16 @@ Retrieve one past decision by id (404 if not found/expired from memory).
 Must include **every** existing rule id exactly once (422 otherwise) — priorities are reassigned
 descending in the given order.
 
-## AI (Grok)-backed endpoints
+## AI (Groq)-backed endpoints
 
-All degrade to a deterministic offline fallback if `XAI_API_KEY` is unset or the Grok call fails —
-responses include a `source: "grok" | "fallback"` field so callers can tell which path was used.
+All degrade to a deterministic offline fallback if `GROQ_API_KEY` is unset or the Groq call fails —
+responses include a `source: "groq" | "fallback"` field so callers can tell which path was used.
 
 ### `POST /rules/from-text`
 ```json
 { "text": "Recommend gaming accessories to users interested in gaming who search for a laptop" }
 ```
-→ `{ "rule": <RuleCreate>, "source": "grok", "notes": "..." }` — not saved automatically; the admin
+→ `{ "rule": <RuleCreate>, "source": "groq", "notes": "..." }` — not saved automatically; the admin
 reviews/edits before `POST /rules`.
 
 ### `POST /rules/{rule_id}/preview`
@@ -172,7 +172,7 @@ reviews/edits before `POST /rules`.
 }
 ```
 When `matched_products` is empty, `needs_product: true` and `suggested_product` holds a
-Grok-suggested product spec to add to the catalog.
+Groq-suggested product spec to add to the catalog.
 
 ### `POST /rules/preview-draft`
 Same response shape as `/rules/{rule_id}/preview`, but for an **unsaved** draft rule — body is a
@@ -190,4 +190,44 @@ endpoint and shows the match count inline in the same modal.
 → `rule_id: "draft"` in the response; nothing is written to the ruleset.
 
 ### `POST /rules/review`
-No body. → `{ "review": "...bullet-point findings...", "source": "grok" }`.
+No body. → `{ "review": "...bullet-point findings...", "source": "groq" }`.
+
+### `POST /rules/draft-with-review`
+The rule-authoring pipeline in one call: **Interpret → Retrieve (RAG over the existing ruleset) →
+Conflict-check → Validate/repair → Preview**. Fuses `/rules/from-text` + a RAG conflict-check +
+`/rules/preview-draft` into a single round trip, with every step recorded so the admin can see what
+happened rather than getting one opaque result.
+```json
+{ "text": "recommend skincare to beauty shoppers" }
+```
+→
+```json
+{
+  "rule": { "name": "...", "condition": { "...": "..." }, "recommend": { "...": "..." } },
+  "conflict_check": {
+    "verdict": "overlap",
+    "candidates": [
+      { "rule_id": "rule-beauty", "rule_name": "Beauty interest -> skincare", "similarity": 0.62,
+        "note": "same field 'purchase_tags', overlapping value(s): ['beauty']" }
+    ],
+    "notes": "1 retrieved rule(s) share the same condition field and an overlapping value.",
+    "source": "groq"
+  },
+  "preview": { "rule_id": "draft", "matched": false, "matched_products": [ "...": "..." ], "...": "..." },
+  "steps": [
+    { "agent": "Interpreter", "status": "ok", "detail": "drafted via groq" },
+    { "agent": "Retriever", "status": "ok", "detail": "found 3 similar existing rule(s)" },
+    { "agent": "Conflict-checker", "status": "ok", "detail": "verdict=overlap via groq" },
+    { "agent": "Validator", "status": "ok", "detail": "" },
+    { "agent": "Previewer", "status": "ok", "detail": "This rule currently resolves to 10 product(s): ..." }
+  ],
+  "source": "groq",
+  "notes": "Generated via groq"
+}
+```
+`conflict_check.verdict` **warns, it never blocks** — saving is still a separate, explicit
+`POST /rules` / `PUT /rules/{id}` call. Retrieval finding zero similar rules skips the
+conflict-check LLM call entirely (`conflict_check.source: "none"`) rather than paying for a call
+with nothing to compare against. If the Interpreter step reports the request as unsupported (see
+`/rules/from-text` above), `rule`/`conflict_check`/`preview` are all `null` and `steps` has only the
+one Interpreter entry.
