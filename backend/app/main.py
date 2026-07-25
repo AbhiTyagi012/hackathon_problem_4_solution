@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import catalog, evaluate, health, recommend, rules
+from app.api.routes import catalog, evaluate, health, logs, recommend, rules
 from app.core.config import get_settings
 from app.core.exceptions import PlatformError
 from app.core.logging import get_logger, setup_logging
@@ -60,3 +60,4 @@ app.include_router(rules.router)
 app.include_router(recommend.router)
 app.include_router(evaluate.router)
 app.include_router(catalog.router)
+app.include_router(logs.router)

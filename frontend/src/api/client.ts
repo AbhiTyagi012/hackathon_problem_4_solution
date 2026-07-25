@@ -1,5 +1,6 @@
 import type {
   Decision,
+  LogEntry,
   NlRuleResponse,
   Product,
   Profile,
@@ -120,4 +121,10 @@ export const api = {
 
   // audit
   listDecisions: (limit = 50) => request<Decision[]>(`/decisions?limit=${limit}`),
+
+  // live logging
+  recentLogs: (limit = 200) => request<LogEntry[]>(`/logs/recent?limit=${limit}`),
+  // EventSource is a native browser API (not fetch-based), so the stream itself isn't
+  // wrapped through request() — this just centralizes the URL construction.
+  logsStreamUrl: (since = 0) => `${BASE_URL}/logs/stream?since=${since}`,
 };

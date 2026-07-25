@@ -680,3 +680,105 @@ input, select, textarea, button {
     right: 0;
   }
 }
+
+/* Live log viewer (/admin/logs) */
+.log-status {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.log-status-live {
+  color: #16a34a;
+  border-color: #16a34a;
+}
+
+.log-status-down {
+  color: var(--fg-muted);
+}
+
+.log-controls {
+  padding: 12px 18px;
+}
+
+.log-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.log-level-filter.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.log-search {
+  flex: 1;
+  min-width: 160px;
+}
+
+.log-console {
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  max-height: 65vh;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 70%, black 8%);
+}
+
+.log-line {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.log-time {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.log-level-badge {
+  flex-shrink: 0;
+  width: 64px;
+  font-weight: 700;
+}
+
+.log-logger {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-message {
+  color: var(--fg);
+}
+
+.log-level-info .log-level-badge {
+  color: var(--accent);
+}
+
+.log-level-warning .log-level-badge,
+.log-level-warning .log-message {
+  color: #f59e0b;
+}
+
+.log-level-error .log-level-badge,
+.log-level-error .log-message,
+.log-level-critical .log-level-badge,
+.log-level-critical .log-message {
+  color: #dc2626;
+}
+
+.log-level-debug .log-level-badge {
+  color: var(--fg-muted);
+}

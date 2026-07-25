@@ -14,7 +14,7 @@ import faiss
 import numpy as np
 
 from app.core.logging import get_logger
-from app.embeddings.service import EmbeddingService
+from app.embeddings.service import EmbeddingService, fallback_embed
 from app.models.schemas import Rule
 from app.rules.repository import RuleRepository
 
@@ -60,13 +60,35 @@ class RuleVectorIndex:
         logger.info("built rule vector index over %d rule(s), source=%s", len(rules), self.source)
 
     def embed_query(self, text: str) -> list[float]:
+        """Embeds `text` to search against the already-built index.
+
+        Deliberately doesn't independently decide gemini-vs-fallback: if the
+        index itself was built on the fallback path (e.g. Gemini was
+        rate-limited at build time), a live per-query embed call can still
+        succeed moments later — same API, just less load — and return a
+        real, differently-dimensioned vector. Searching a fallback-dim index
+        with a real-embedding-dim query crashes FAISS. So the query always
+        follows the index's committed source; `search()` still guards against
+        any remaining drift (e.g. the opposite case: index is gemini-sourced
+        but this particular live call falls back) as a second line of defense.
+        """
         self._ensure_built()
+        if self.source != "gemini":
+            return fallback_embed(text)
         vec, _source = self._embedding_service.embed(text)
         return vec
 
     def search(self, query_vector: list[float], k: int, exclude_rule_id: str | None = None) -> list[tuple[str, float]]:
         self._ensure_built()
         if not self._rule_ids:
+            return []
+        if len(query_vector) != self._index.d:
+            logger.warning(
+                "query vector dim %d != rule index dim %d (embedding source drifted between build and "
+                "query) — skipping retrieval for this request instead of searching with a mismatched "
+                "vector",
+                len(query_vector), self._index.d,
+            )
             return []
         query = np.array([query_vector], dtype="float32")
         faiss.normalize_L2(query)

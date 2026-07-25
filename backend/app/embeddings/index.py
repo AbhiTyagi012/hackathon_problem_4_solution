@@ -25,7 +25,7 @@ import numpy as np
 
 from app.catalog.repository import ProductRepository
 from app.core.logging import get_logger
-from app.embeddings.service import EmbeddingService
+from app.embeddings.service import EmbeddingService, fallback_embed
 from app.models.schemas import Product
 
 logger = get_logger(__name__)
@@ -120,14 +120,33 @@ class ProductVectorIndex:
         return self._vectors.get(product_id)
 
     def embed_query(self, text: str) -> list[float]:
-        """For arbitrary text not already in the catalog (e.g. a free-text query)."""
-        self._ensure_built()  # guarantees fallback/real decision already made for this vector space
+        """For arbitrary text not already in the catalog (e.g. a free-text query).
+
+        Follows the index's already-committed source rather than deciding
+        independently: a live per-query embed call can succeed even when the
+        index itself was built on the fallback path (e.g. a transient rate
+        limit at build time that's since cleared), returning a real,
+        differently-dimensioned vector that would crash FAISS search against a
+        fallback-dim index. `search()` also guards the reverse case (index is
+        gemini-sourced but this call falls back) as a second line of defense.
+        """
+        self._ensure_built()
+        if self.source != "gemini":
+            return fallback_embed(text)
         vec, _source = self._embedding_service.embed(text)
         return vec
 
     def search(self, query_vector: list[float], k: int, exclude_ids: set[str] | None = None) -> list[tuple[str, float]]:
         self._ensure_built()
         exclude_ids = exclude_ids or set()
+        if self._index is not None and len(query_vector) != self._index.d:
+            logger.warning(
+                "query vector dim %d != product index dim %d (embedding source drifted between build "
+                "and query) — skipping retrieval for this request instead of searching with a "
+                "mismatched vector",
+                len(query_vector), self._index.d,
+            )
+            return []
         query = np.array([query_vector], dtype="float32")
         faiss.normalize_L2(query)
         fetch_k = min(len(self._product_ids), k + len(exclude_ids) + 5) or 1

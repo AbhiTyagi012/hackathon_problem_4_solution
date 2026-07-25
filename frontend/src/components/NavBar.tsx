@@ -16,8 +16,14 @@ export function NavBar() {
         Profile
       </NavLink>
       <div className="navbar-spacer" />
-      <NavLink to="/admin" className={({ isActive }) => `nav-link nav-link-admin${isActive ? " active" : ""}`}>
+      <NavLink to="/admin" className={({ isActive }) => `nav-link nav-link-admin${isActive ? " active" : ""}`} end>
         ⚙ Admin
+      </NavLink>
+      <NavLink
+        to="/admin/logs"
+        className={({ isActive }) => `nav-link nav-link-admin${isActive ? " active" : ""}`}
+      >
+        📜 Logs
       </NavLink>
     </nav>
   );

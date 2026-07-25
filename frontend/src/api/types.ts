@@ -151,3 +151,13 @@ export interface SimilarProductsResponse {
   items: SimilarProduct[];
   source: "gemini" | "fallback";
 }
+
+// Live log viewer (/admin/logs) — tails the same structured log stream every
+// logger.info/warning/error(...) call in the backend already flows into.
+export interface LogEntry {
+  seq: number;
+  timestamp: string;
+  level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  logger: string;
+  message: string;
+}
